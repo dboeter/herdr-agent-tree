@@ -1,0 +1,48 @@
+# Agent Tree: workspaces as groups, their agents as a live tree, docked on the
+# right edge of every tab (herdr-sidebar owns the left edge).
+#
+# Paths are absolute: hook commands run with cwd = plugin root, but a plugin
+# pane's process does not, so one rule for all entries.
+
+id = "local.agent-tree"
+name = "Agent Tree"
+version = "0.1.0"
+min_herdr_version = "0.9.0"
+description = "Workspaces and their agents as a live tree, docked on the right of every tab."
+platforms = ["linux"]
+
+[[panes]]
+id = "tree"
+title = "Agent Tree"
+placement = "split"
+command = ["/usr/bin/python3", "/home/daanb/.config/herdr/local-plugins/agent-tree/agent_tree.py", "--ui"]
+
+[[actions]]
+id = "toggle"
+title = "Toggle agent tree in this tab"
+description = "Close the tree in the focused tab and keep it closed there, or bring it back."
+command = ["/usr/bin/python3", "/home/daanb/.config/herdr/local-plugins/agent-tree/agent_tree.py", "--toggle"]
+
+[[actions]]
+id = "toggle-all"
+title = "Toggle agent tree everywhere"
+description = "Turn auto-docking off (closing every tree) or back on."
+command = ["/usr/bin/python3", "/home/daanb/.config/herdr/local-plugins/agent-tree/agent_tree.py", "--toggle-all"]
+
+# Dock into the focused tab whenever focus lands somewhere new. tab.created
+# waits for the lock so a new tab is never skipped; focus bursts may skip.
+[[events]]
+on = "tab.created"
+command = ["/usr/bin/python3", "/home/daanb/.config/herdr/local-plugins/agent-tree/agent_tree.py", "--ensure", "--wait"]
+
+[[events]]
+on = "tab.focused"
+command = ["/usr/bin/python3", "/home/daanb/.config/herdr/local-plugins/agent-tree/agent_tree.py", "--ensure"]
+
+[[events]]
+on = "workspace.focused"
+command = ["/usr/bin/python3", "/home/daanb/.config/herdr/local-plugins/agent-tree/agent_tree.py", "--ensure"]
+
+[[events]]
+on = "workspace.created"
+command = ["/usr/bin/python3", "/home/daanb/.config/herdr/local-plugins/agent-tree/agent_tree.py", "--ensure"]
