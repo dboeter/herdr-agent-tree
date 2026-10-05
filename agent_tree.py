@@ -24,7 +24,7 @@ import time
 import tty
 import unicodedata
 
-PLUGIN_ID = "local.agent-tree"
+PLUGIN_ID = "herdr-agent-tree"
 TOKEN = (
     "agent-tree"  # pane metadata token marking our panes; value = unix-time heartbeat
 )

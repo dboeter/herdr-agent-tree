@@ -5,7 +5,7 @@
 # process: hook commands run with cwd = plugin root, but a plugin pane's process is
 # not guaranteed to, so one rule for all entries keeps the plugin relocatable.
 
-id = "local.agent-tree"
+id = "herdr-agent-tree"
 name = "Agent Tree"
 version = "0.1.0"
 min_herdr_version = "0.9.0"

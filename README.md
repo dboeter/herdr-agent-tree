@@ -65,7 +65,7 @@ Plugin actions, available from herdr's action menu:
 - **Toggle agent tree everywhere**: turn auto-docking off (closing every tree) or back on.
 
 Folded workspaces, colours and per-tab opt-outs are shared by all trees and persist in
-`$HERDR_PLUGIN_STATE_DIR` (`~/.local/state/herdr/plugins/local.agent-tree`).
+`$HERDR_PLUGIN_STATE_DIR` (`~/.local/state/herdr/plugins/herdr-agent-tree`).
 
 ## How it works
 
