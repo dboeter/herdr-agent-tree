@@ -25,9 +25,7 @@ import tty
 import unicodedata
 
 PLUGIN_ID = "herdr-agent-tree"
-TOKEN = (
-    "agent-tree"  # pane metadata token marking our panes; value = unix-time heartbeat
-)
+TOKEN = "herdr-agent-tree"  # pane metadata token marking our panes; value = unix-time heartbeat
 WIDTH = 34  # columns the docked pane aims for
 HEARTBEAT = 5
 # A restored session brings panes back with their old tokens but no live process,
