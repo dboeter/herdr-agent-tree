@@ -1,14 +1,14 @@
 # Agent Tree
 
-A [herdr](https://herdr.dev) plugin that docks a narrow pane on the right edge of every
+A [herdr](https://herdr.dev) plugin that docks a narrow pane on the left edge of every
 tab, showing your workspaces as groups and their agents as a live tree:
 
 ```
-1  dotagents (3) ◐ 1 ✓ 1
+1  dotagents ◐ 1 ✓ 1
 ▶ ├ ◐ Improve Agent Log 
   ├ ✓ Review Prompt Skill 
   └ ○ Merge Agent Log Icons 
-2  homelab (1)
+2  homelab
   └ ● Resolve Auth Error 
 4 agents  ● 1  ◐ 1  ✓ 1  ○ 1
 ```
@@ -46,7 +46,7 @@ to `agent_tree.py` apply to trees opened afterwards.
 ## Usage
 
 A tree docks itself into a tab whenever the tab is created or focused, as long as the
-tab's right-edge pane is at least 68 columns wide and the tab is not zoomed.
+tab's left-edge pane is at least 82 columns wide and the tab is not zoomed.
 
 | Key | Action |
 |---|---|
@@ -56,7 +56,8 @@ tab's right-edge pane is at least 68 columns wide and the tab is not zoomed.
 | `Enter` / `Space` / click | Focus the agent, or fold the workspace |
 | `h` `l` / `←` `→` | Fold / unfold; `h` on an agent jumps to its workspace |
 | `r` | Rename the agent's tab (`Enter` saves, `Esc` cancels) |
-| `c` `C` / right-click | Cycle the workspace colour |
+| `c` `C` | Cycle the workspace colour |
+| right-click | Menu: focus, rename, fold, colour (`Esc` or a click elsewhere closes it) |
 | `q` | Close the tree and keep this tab free of it |
 
 Plugin actions, available from herdr's action menu:
@@ -73,6 +74,7 @@ Folded workspaces, colours and per-tab opt-outs are shared by all trees and pers
 workspace events; it docks a tree into the focused tab unless a live one is already
 there. Each tree is its own `--ui` process. It subscribes to herdr's event stream,
 re-reads the session snapshot at most every 0.4 s on events (and every 3 s regardless),
-and writes a heartbeat to its pane metadata every 5 s. A tree whose heartbeat is older
+and writes a heartbeat to its pane metadata every 8 s. A tree in a hidden tab ignores
+pane updates and re-reads every 10 s instead. A tree whose heartbeat is older
 than 20 s, such as one restored from a saved session without its process, is replaced
 on the next focus.
