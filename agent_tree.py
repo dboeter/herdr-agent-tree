@@ -3,7 +3,7 @@
 
 Modes:
   --ui          the TUI that runs inside the docked pane
-  --ensure      event hook: dock a tree on the left edge of the focused tab
+  --ensure      event hook: dock a tree on the configured edge of the focused tab
                 (--wait blocks on the dock lock instead of skipping when busy)
   --toggle      action: close the tree in this tab and keep it closed, or bring it back
   --toggle-all  action: switch auto-docking off everywhere (closing every tree) or on
@@ -21,6 +21,7 @@ import socket
 import sys
 import termios
 import time
+import tomllib
 import tty
 import unicodedata
 
@@ -38,6 +39,19 @@ SOCK = os.environ.get("HERDR_SOCKET_PATH") or os.path.expanduser(
 STATE = os.environ.get("HERDR_PLUGIN_STATE_DIR") or os.path.expanduser(
     f"~/.local/state/herdr/plugins/{PLUGIN_ID}"
 )
+CONFIG = os.environ.get("HERDR_PLUGIN_CONFIG_DIR") or os.path.expanduser(
+    f"~/.config/herdr/plugins/config/{PLUGIN_ID}"
+)
+
+
+def side():
+    """The edge trees dock on: `side = "left"` (default) or `"right"` in config.toml."""
+    try:
+        with open(os.path.join(CONFIG, "config.toml"), "rb") as f:
+            value = tomllib.load(f).get("side")
+    except (OSError, tomllib.TOMLDecodeError):
+        return "left"
+    return "right" if value == "right" else "left"
 
 
 # --- socket API -----------------------------------------------------------------
@@ -165,12 +179,19 @@ def dock(tab):
     lay = call("pane.layout", {"pane_id": anchor["pane_id"]})["layout"]
     if lay["zoomed"]:
         return
-    left = [p for p in lay["panes"] if p["rect"]["x"] == lay["area"]["x"]]
-    if not left:
+    on_left = side() == "left"
+    area = lay["area"]
+    right = lambda r: r["x"] + r["width"]
+    edge = [
+        p
+        for p in lay["panes"]
+        if (p["rect"]["x"] == area["x"] if on_left else right(p["rect"]) == right(area))
+    ]
+    if not edge:
         return
-    # Splitting the tallest left-edge pane gives the tallest column herdr allows:
+    # Splitting the tallest edge pane gives the tallest column herdr allows:
     # panes cannot be inserted at a tab's layout root.
-    target = max(left, key=lambda p: p["rect"]["height"])
+    target = max(edge, key=lambda p: p["rect"]["height"])
     if target["rect"]["width"] < 2 * WIDTH:
         return
     res = call(
@@ -188,11 +209,13 @@ def dock(tab):
     new = res["plugin_pane"]["pane"]["pane_id"]
     # Stamp while still holding the lock, so a hook queued behind us sees a live tree.
     stamp(new)
-    # herdr only splits right or down, so the tree opens right of its target; swapping
-    # moves it to the left edge. The swap focuses the tree, so hand focus back.
-    call("pane.swap", {"source_pane_id": new, "target_pane_id": target["pane_id"]})
-    if lay.get("focused_pane_id"):
-        call("pane.focus", {"pane_id": lay["focused_pane_id"]})
+    # herdr only splits right or down, so the tree opens right of its target: already
+    # on the right edge, or swapped onto the left one. The swap focuses the tree, so
+    # hand focus back.
+    if on_left:
+        call("pane.swap", {"source_pane_id": new, "target_pane_id": target["pane_id"]})
+        if lay.get("focused_pane_id"):
+            call("pane.focus", {"pane_id": lay["focused_pane_id"]})
     fit(new)
 
 
@@ -241,6 +264,8 @@ def toggle_all():
         for p in tree_panes(snap):
             call("pane.close", {"pane_id": p["pane_id"]})
     else:
+        # "Everywhere" includes tabs closed with q, or the focused one stays empty.
+        save("snoozed.json", [])
         ensure_tab(snap)
 
 
@@ -537,7 +562,12 @@ class Tree:
         if self.key in keys:
             self.cursor = keys.index(self.key)
         self.cursor = max(0, min(self.cursor, len(self.rows) - 1))
-        self.key = keys[self.cursor] if keys else None
+        # herdr drops an agent for a few seconds while it restarts, though its pane
+        # stays. Keep the key meanwhile rather than adopt the row that slid into its
+        # place, so the cursor goes back to the agent when it reappears.
+        panes = {p["pane_id"] for p in snap["panes"]}
+        if not (self.key and self.key[0] == "agent" and self.key[1] in panes):
+            self.key = keys[self.cursor] if keys else None
         # draw() shows a rename on the selected row, so drop it once that row no longer
         # belongs to the tab being renamed (its agent or the tab itself went away).
         row = self.rows[self.cursor] if self.rows else None
@@ -624,6 +654,18 @@ class Tree:
             ("Next colour", lambda: self.recolor(1)),
             ("Previous colour", lambda: self.recolor(-1)),
         ]
+        # Last, away from the default selection: closing takes everything inside with it.
+        if kind == "ws":
+            wid = item["workspace_id"]
+            items.append(
+                (
+                    "Close workspace",
+                    lambda: call("workspace.close", {"workspace_id": wid}),
+                )
+            )
+        else:
+            pid = item["pane_id"]
+            items.append(("Close pane", lambda: call("pane.close", {"pane_id": pid})))
         self.menu = {"key": self.key, "items": items, "sel": 0, "box": None}
 
     def menu_run(self, i):

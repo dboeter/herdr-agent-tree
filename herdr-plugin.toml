@@ -1,5 +1,5 @@
 # Agent Tree: workspaces as groups, their agents as a live tree, docked on the
-# left edge of every tab.
+# left (or right) edge of every tab.
 #
 # Commands go through sh and $HERDR_PLUGIN_ROOT, which herdr sets for every plugin
 # process: hook commands run with cwd = plugin root, but a plugin pane's process is
@@ -9,7 +9,7 @@ id = "herdr-agent-tree"
 name = "Agent Tree"
 version = "0.1.0"
 min_herdr_version = "0.9.0"
-description = "Workspaces and their agents as a live tree, docked on the left of every tab."
+description = "Workspaces and their agents as a live tree, docked on the left or right of every tab."
 platforms = ["linux"]
 
 [[panes]]

@@ -1,7 +1,7 @@
 # Agent Tree
 
-A [herdr](https://herdr.dev) plugin that docks a narrow pane on the left edge of every
-tab, showing your workspaces as groups and their agents as a live tree:
+A [herdr](https://herdr.dev) plugin that docks a narrow pane on the left (or right) edge
+of every tab, showing your workspaces as groups and their agents as a live tree:
 
 ```
 1  dotagents ◐ 1 ✓ 1
@@ -23,7 +23,7 @@ tab, showing your workspaces as groups and their agents as a live tree:
 ## Requirements
 
 - herdr 0.9.0 or newer, on Linux
-- `python3` on `PATH` (stdlib only, nothing to install)
+- `python3` 3.11 or newer on `PATH` (stdlib only, nothing to install)
 - A [Nerd Font](https://www.nerdfonts.com) 3.5.0 or newer for the carets and the
   Claude/Codex logos; older fonts show boxes in their place
 
@@ -46,7 +46,7 @@ to `agent_tree.py` apply to trees opened afterwards.
 ## Usage
 
 A tree docks itself into a tab whenever the tab is created or focused, as long as the
-tab's left-edge pane is at least 82 columns wide and the tab is not zoomed.
+tab's tallest edge pane is at least 82 columns wide and the tab is not zoomed.
 
 | Key | Action |
 |---|---|
@@ -57,16 +57,27 @@ tab's left-edge pane is at least 82 columns wide and the tab is not zoomed.
 | `h` `l` / `←` `→` | Fold / unfold; `h` on an agent jumps to its workspace |
 | `r` | Rename the agent's tab (`Enter` saves, `Esc` cancels) |
 | `c` `C` | Cycle the workspace colour |
-| right-click | Menu: focus, rename, fold, colour (`Esc` or a click elsewhere closes it) |
+| right-click | Menu: focus, rename, fold, colour, close (`Esc` or a click elsewhere closes it) |
 | `q` | Close the tree and keep this tab free of it |
 
 Plugin actions, available from herdr's action menu:
 
 - **Toggle agent tree in this tab**: close the tree here and keep it closed, or bring it back.
-- **Toggle agent tree everywhere**: turn auto-docking off (closing every tree) or back on.
+- **Toggle agent tree everywhere**: turn auto-docking off (closing every tree) or back on, including in tabs closed with `q`.
 
 Folded workspaces, colours and per-tab opt-outs are shared by all trees and persist in
 `$HERDR_PLUGIN_STATE_DIR` (`~/.local/state/herdr/plugins/herdr-agent-tree`).
+
+## Configuration
+
+Trees dock on the left by default. To dock them on the right, create `config.toml` in
+the plugin's config directory (`herdr plugin config-dir herdr-agent-tree` prints it):
+
+```toml
+side = "right"  # "left" or "right"
+```
+
+New trees pick it up; to move an open tree, toggle it off and on again.
 
 ## How it works
 
