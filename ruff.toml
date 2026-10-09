@@ -1,0 +1,2 @@
+# Matches the README's python3 >= 3.11; older targets don't know tomllib is stdlib.
+target-version = "py311"

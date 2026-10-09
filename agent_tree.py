@@ -29,9 +29,12 @@ PLUGIN_ID = "herdr-agent-tree"
 TOKEN = "herdr-agent-tree"  # pane metadata token marking our panes; value = unix-time heartbeat
 WIDTH = 41  # columns the docked pane aims for
 HEARTBEAT = 8
-# A restored session brings panes back with their old tokens but no live process,
-# so a token older than this marks a dead tree that must be replaced.
+# A token older than this marks a tree whose process died, to be replaced.
 STALE = 20
+# herdr restores a session's plugin panes as plain shells: the manifest pane title
+# survives as the label, the tokens and the tree process do not. Must equal the
+# [[panes]] title in herdr-plugin.toml.
+TITLE = "Agent Tree"
 SCRIPT = os.path.abspath(__file__)
 SOCK = os.environ.get("HERDR_SOCKET_PATH") or os.path.expanduser(
     "~/.config/herdr/herdr.sock"
@@ -128,14 +131,15 @@ def tree_panes(snap, tab=None):
     return [
         p
         for p in snap["panes"]
-        if TOKEN in (p.get("tokens") or {}) and (tab is None or p["tab_id"] == tab)
+        if (TOKEN in (p.get("tokens") or {}) or p.get("label") == TITLE)
+        and (tab is None or p["tab_id"] == tab)
     ]
 
 
 def alive(pane):
     try:
-        return time.time() - float(pane["tokens"][TOKEN]) < STALE
-    except (TypeError, ValueError):
+        return time.time() - float((pane.get("tokens") or {})[TOKEN]) < STALE
+    except (KeyError, TypeError, ValueError):
         return False
 
 
