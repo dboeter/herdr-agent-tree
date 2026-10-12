@@ -47,14 +47,28 @@ CONFIG = os.environ.get("HERDR_PLUGIN_CONFIG_DIR") or os.path.expanduser(
 )
 
 
-def side():
-    """The edge trees dock on: `side = "left"` (default) or `"right"` in config.toml."""
+def config():
+    """config.toml as a dict; empty when missing or unreadable, so every key falls back."""
     try:
         with open(os.path.join(CONFIG, "config.toml"), "rb") as f:
-            value = tomllib.load(f).get("side")
+            return tomllib.load(f)
     except (OSError, tomllib.TOMLDecodeError):
-        return "left"
-    return "right" if value == "right" else "left"
+        return {}
+
+
+def side():
+    """The edge trees dock on: `side = "left"` (default) or `"right"` in config.toml."""
+    return "right" if config().get("side") == "right" else "left"
+
+
+def hex_rgb(value):
+    """`"#rrggbb"` as an (r, g, b) tuple, or None when it isn't one."""
+    if isinstance(value, str) and len(value) == 7 and value[0] == "#":
+        try:
+            return tuple(int(value[i : i + 2], 16) for i in (1, 3, 5))
+        except ValueError:
+            pass
+    return None
 
 
 # --- socket API -----------------------------------------------------------------
@@ -322,7 +336,7 @@ def blend(a, b, t):
     return tuple(round(x + (y - x) * t) for x, y in zip(a, b))
 
 
-def build(snap, collapsed, here, colors):
+def build(snap, collapsed, here, colors, logos=False, default=None):
     """Rows as (key, kind, payload, segments, flex); segments are (text, colour, bold)."""
     tabs = {t["tab_id"]: t for t in snap["tabs"]}
     per_tab = {}
@@ -341,7 +355,9 @@ def build(snap, collapsed, here, colors):
             ),
         )
         open_ = wid not in collapsed
-        colour = PALETTE[colors.get(wid, 0) % len(PALETTE)]
+        index = colors.get(wid, 0) % len(PALETTE)
+        # Index 0 is the default slot; workspace_color in config.toml overrides it.
+        colour = default if index == 0 and default else PALETTE[index]
         segs = [
             (f"{w['number']} ", DIM, False),
             # fa-caret_down / fa-caret_right: full-height carets; ▼/▶ would clash
@@ -371,16 +387,19 @@ def build(snap, collapsed, here, colors):
                 ("└ " if i == len(agents) - 1 else "├ ", DIM, False),
                 (f"{glyph} ", colour, False),
                 (label, None, is_here),
-                (
-                    f" {ICON.get(a['agent'], a['agent'])}",
-                    # Logos are dimmed halfway to the background so the status glyph
-                    # stays the loudest thing on the row; agent names stay readable.
-                    blend(KIND.get(a["agent"], DIM), BASE_BG, 0.5)
-                    if a["agent"] in ICON
-                    else KIND.get(a["agent"], DIM),
-                    False,
-                ),
             ]
+            if logos:
+                segs.append(
+                    (
+                        f" {ICON.get(a['agent'], a['agent'])}",
+                        # Logos are dimmed halfway to the background so the status glyph
+                        # stays the loudest thing on the row; agent names stay readable.
+                        blend(KIND.get(a["agent"], DIM), BASE_BG, 0.5)
+                        if a["agent"] in ICON
+                        else KIND.get(a["agent"], DIM),
+                        False,
+                    )
+                )
             rows.append((("agent", a["pane_id"]), "agent", a, segs, 3))
     return rows
 
@@ -540,9 +559,12 @@ class Tree:
         self.flashes = {}  # pane_id -> (start, colour, workspace_id) of a state change
         self.redraw = True  # rows or input changed since the last draw
         self.size = None  # terminal size at the last draw
+        self.logos = False  # config.toml `logos`, re-read on every refresh
 
     def refresh(self):
         snap = snapshot()
+        cfg = config()
+        self.logos = cfg.get("logos") is True
         mine = next((p for p in snap["panes"] if p["pane_id"] == self.me), None)
         self.here = mine["tab_id"] if mine else None
         self.labels = {t["tab_id"]: t["label"] for t in snap["tabs"]}
@@ -552,12 +574,23 @@ class Tree:
             now = time.monotonic()
             for a in snap["agents"]:
                 old = self.status.get(a["pane_id"])
-                if old is not None and old != a["agent_status"]:
+                # Only states that want you flash: blocked and done, never working/idle.
+                if (
+                    cfg.get("flash", True) is not False
+                    and old is not None
+                    and old != a["agent_status"]
+                    and a["agent_status"] in ("blocked", "done")
+                ):
                     colour = STATUS.get(a["agent_status"], STATUS["unknown"])[1]
                     self.flashes[a["pane_id"]] = (now, colour, a["workspace_id"])
         self.status = status
         self.rows = build(
-            snap, set(load("collapsed.json", [])), self.here, load("colors.json", {})
+            snap,
+            set(load("collapsed.json", [])),
+            self.here,
+            load("colors.json", {}),
+            self.logos,
+            hex_rgb(cfg.get("workspace_color")),
         )
         self.footer = summary(snap)
         keys = [r[0] for r in self.rows]
@@ -839,7 +872,9 @@ class Tree:
                     typed = typed[1:]
                 segs, flex = segs[:3] + [(typed + "▏", None, True)], None
             # Agent rows push their logo to the right edge so logos line up in a column.
-            lines.append(paint(segs, width, bg, flex, right=kind == "agent"))
+            lines.append(
+                paint(segs, width, bg, flex, right=self.logos and kind == "agent")
+            )
         if not self.rows:
             lines = [paint([("no workspaces", DIM, False)], width)]
         frame = "\x1b[H" + "\r\n".join(lines) + "\x1b[J"

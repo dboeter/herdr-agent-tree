@@ -6,7 +6,7 @@ of every tab, showing your workspaces as groups and their agents as a live tree:
 <img width="412" height="553" alt="image" src="https://github.com/user-attachments/assets/394d48ee-cee6-401f-8daf-1dfb343dedc2" />
 
 - Status per agent: `●` blocked, `◐` working, `✓` done, `○` idle. A row flashes when its
-  agent changes state; a collapsed workspace flashes on its agents' behalf.
+  agent becomes blocked or done; a collapsed workspace flashes on its agents' behalf.
 - `▶` marks the agent in the tab you are looking at.
 - An agent is named after its tab, or after its session title when the tab has
   several agents or only a number for a label.
@@ -17,8 +17,8 @@ of every tab, showing your workspaces as groups and their agents as a live tree:
 
 - herdr 0.9.0 or newer, on Linux
 - `python3` 3.11 or newer on `PATH` (stdlib only, nothing to install)
-- A [Nerd Font](https://www.nerdfonts.com) 3.5.0 or newer for the carets and the
-  Claude/Codex logos; older fonts show boxes in their place
+- A [Nerd Font](https://www.nerdfonts.com) 3.5.0 or newer for the carets and, when
+  turned on, the Claude/Codex logos; older fonts show boxes in their place
 
 ## Install
 
@@ -63,14 +63,19 @@ Folded workspaces, colours and per-tab opt-outs are shared by all trees and pers
 
 ## Configuration
 
-Trees dock on the left by default. To dock them on the right, create `config.toml` in
-the plugin's config directory (`herdr plugin config-dir herdr-agent-tree` prints it):
+Settings live in `config.toml` in the plugin's config directory
+(`herdr plugin config-dir herdr-agent-tree` prints it). Every key is optional; these
+are the defaults:
 
 ```toml
-side = "right"  # "left" or "right"
+side = "left"                # dock on the "left" or "right" edge
+logos = false                # true ends agent rows with the agent's logo (or name)
+workspace_color = "#7dcfff"  # default workspace colour; c/C still cycles the palette
+flash = true                 # false stops rows flashing when an agent becomes blocked or done
 ```
 
-New trees pick it up; to move an open tree, toggle it off and on again.
+Open trees pick up `logos`, `workspace_color` and `flash` within a few seconds. `side`
+applies to new trees; to move an open tree, toggle it off and on again.
 
 ## How it works
 
