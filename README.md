@@ -4,12 +4,11 @@ A [herdr](https://herdr.dev) plugin that docks a narrow pane on the left (or rig
 of every tab, showing your workspaces as groups and their agents as a live tree:
 
 ```
-1  dotagents ◐ 1 ✓ 1
+1  dotagents
 ▶ ├ ◐ Improve Agent Log 
   ├ ✓ Review Prompt Skill 
   └ ○ Merge Agent Log Icons 
-2  homelab
-  └ ● Resolve Auth Error 
+2  homelab ● 1
 4 agents  ● 1  ◐ 1  ✓ 1  ○ 1
 ```
 
@@ -18,6 +17,7 @@ of every tab, showing your workspaces as groups and their agents as a live tree:
 - `▶` marks the agent in the tab you are looking at.
 - An agent is named after its tab, or after its session title when the tab has
   several agents or only a number for a label.
+- A folded workspace counts its blocked, working and done agents on its own row.
 - The footer counts all agents by status.
 
 ## Requirements

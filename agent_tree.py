@@ -284,7 +284,7 @@ STATUS = {  # agent_status -> glyph, colour
 }
 KIND = {  # brand colours
     "claude": (217, 119, 87),  # Claude orange #D97757
-    "codex": (16, 163, 127),  # OpenAI green #10A37F
+    "codex": (255, 255, 255),  # OpenAI's mark is monochrome; white, not its green
     "gemini": (71, 150, 227),  # Gemini blue #4796E3
     "opencode": (140, 140, 150),  # monochrome brand; grey reads on dark themes
 }
@@ -349,13 +349,14 @@ def build(snap, collapsed, here, colors):
             (" " if open_ else " ", DIM, False),
             (w["label"], colour, True),
         ]
-        for status in ("blocked", "working", "done"):
-            n = sum(a["agent_status"] == status for a in agents)
-            if n:
-                glyph, colour = STATUS[status]
-                segs.append((f" {glyph} {n}", colour, False))
         rows.append((("ws", wid), "ws", w, segs, 2))
         if not open_:
+            # Counts stand in for the hidden agent rows, so only a folded workspace shows them.
+            for status in ("blocked", "working", "done"):
+                n = sum(a["agent_status"] == status for a in agents)
+                if n:
+                    glyph, colour = STATUS[status]
+                    segs.append((f" {glyph} {n}", colour, False))
             continue
         for i, a in enumerate(agents):
             label = tabs.get(a["tab_id"], {}).get("label") or ""
@@ -372,7 +373,11 @@ def build(snap, collapsed, here, colors):
                 (label, None, is_here),
                 (
                     f" {ICON.get(a['agent'], a['agent'])}",
-                    KIND.get(a["agent"], DIM),
+                    # Logos are dimmed halfway to the background so the status glyph
+                    # stays the loudest thing on the row; agent names stay readable.
+                    blend(KIND.get(a["agent"], DIM), BASE_BG, 0.5)
+                    if a["agent"] in ICON
+                    else KIND.get(a["agent"], DIM),
                     False,
                 ),
             ]
@@ -415,17 +420,22 @@ def clip(text, n):
     return text
 
 
-def paint(segs, width, bg=None, flex=None):
-    """flex: index of the segment that gives up columns first, so names shrink, not kinds."""
+def paint(segs, width, bg=None, flex=None, right=False):
+    """flex: index of the segment that gives up columns first, so names shrink, not kinds.
+    right: pad the flex segment so the segments after it end PAD columns short of the
+    right edge, mirroring the left pad; a truncated row ends at that column too."""
     # Every line goes through here, so padding here keeps all rows aligned; the pad
     # sits inside the row background so a selected row stays one solid bar.
     segs, width = [(" " * PAD, None, False)] + segs, max(PAD + 1, width)
     flex = None if flex is None else flex + 1
-    over = sum(cols(t) for t, _, _ in segs) - width
+    over = sum(cols(t) for t, _, _ in segs) - width + (PAD if right else 0)
     if flex is not None and over > 0:
         text, colour, bold = segs[flex]
         keep = max(1, cols(text) - over - 1)
         segs = segs[:flex] + [(clip(text, keep) + "…", colour, bold)] + segs[flex + 1 :]
+    elif flex is not None and right and over < 0:
+        text, colour, bold = segs[flex]
+        segs = segs[:flex] + [(text + " " * -over, colour, bold)] + segs[flex + 1 :]
     out, used = [], 0
     for text, colour, bold in segs:
         if used >= width:
@@ -811,7 +821,7 @@ class Tree:
             if key not in lit or start > lit[key][0]:
                 lit[key] = (start, colour)
         lines = []
-        for i, (key, _, _, segs, flex) in enumerate(
+        for i, (key, kind, _, segs, flex) in enumerate(
             self.rows[self.top : self.top + body]
         ):
             selected = self.top + i == self.cursor
@@ -828,7 +838,8 @@ class Tree:
                 while cols(typed) > room:
                     typed = typed[1:]
                 segs, flex = segs[:3] + [(typed + "▏", None, True)], None
-            lines.append(paint(segs, width, bg, flex))
+            # Agent rows push their logo to the right edge so logos line up in a column.
+            lines.append(paint(segs, width, bg, flex, right=kind == "agent"))
         if not self.rows:
             lines = [paint([("no workspaces", DIM, False)], width)]
         frame = "\x1b[H" + "\r\n".join(lines) + "\x1b[J"
