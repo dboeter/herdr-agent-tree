@@ -9,6 +9,7 @@ of every tab, showing your workspaces as groups and their agents as a live tree:
   ├ ✓ Review Prompt Skill 
   └ ○ Merge Agent Log Icons 
 2  homelab ● 1
+
 4 agents  ● 1  ◐ 1  ✓ 1  ○ 1
 ```
 
