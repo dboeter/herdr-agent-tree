@@ -453,7 +453,7 @@ def build(snap, collapsed, here, colors, default=None):
         index = colors.get(wid, 0) % len(PALETTE)
         # Index 0 is the default slot; workspace_color in config.toml overrides it.
         ws_colour = default if index == 0 and default else PALETTE[index]
-        # The workspace you are looking at is bold at full colour; the others are dimmed,
+        # The workspace you are looking at is at full colour; the others are dimmed,
         # so the mark survives folding the workspace and hiding its marked row.
         is_here = tabs.get(here, {}).get("workspace_id") == wid
         segs = [
@@ -463,7 +463,7 @@ def build(snap, collapsed, here, colors, default=None):
             (
                 w["label"],
                 ws_colour if is_here else blend(ws_colour, BASE_BG, 0.3),
-                is_here,
+                False,
             ),
         ]
         rows.append((("ws", wid), "ws", w, segs, 2))
@@ -478,14 +478,13 @@ def build(snap, collapsed, here, colors, default=None):
             if per_tab[a["tab_id"]] > 1 or label.isdigit() or not label:
                 label = a.get("terminal_title_stripped") or label or a["pane_id"]
             glyph, colour = STATUS.get(a["agent_status"], STATUS["unknown"])
-            is_here = a["tab_id"] == here
             segs = [
                 # Blank; its colour is the workspace's, which the draw uses for the
                 # you-are-here mark it puts in the pad column (see paint's mark).
                 ("  ", ws_colour, False),
                 ("└ " if i == len(agents) - 1 else "├ ", DIM, False),
                 (f"{glyph} ", colour, False),
-                (label, None, is_here),
+                (label, None, False),
             ]
             rows.append((("agent", a["pane_id"]), "agent", a, segs, 3))
     return rows
@@ -1140,7 +1139,7 @@ class Tree:
             width = self.size[0] if self.size else 0
             if button == 0 and not release and y == height and x >= width - 1:
                 self.open_settings()  # the cog, last cells of the footer
-            elif button == 0 and not release and y == height and x >= width - 3:
+            elif button == 0 and not release and y == height and x >= width - 4:
                 self.new_workspace()  # the plus, left of the cog
             elif button == 64:
                 self.move(self.cursor - 1)
@@ -1255,9 +1254,10 @@ class Tree:
             rule = f"\x1b[{fg(blend(DIM, BASE_BG, 0.5))}m"
             frame += f"\x1b[{height - 1};1H{rule}{'─' * width}\x1b[39m"
         if extra:
-            # The icons sit one cell apart: fonts draw them two cells wide.
-            icons = f"\x1b[{fg(DIM)}m{PLUS} {COG}\x1b[39m "
-            frame += f"\x1b[{height};1H" + paint(self.footer, width - 4) + icons
+            # Fonts draw the icons two cells wide, spilling into the space after each;
+            # the plus gets two spaces so it sits clear of the cog.
+            icons = f"\x1b[{fg(DIM)}m{PLUS}  {COG}\x1b[39m "
+            frame += f"\x1b[{height};1H" + paint(self.footer, width - 5) + icons
         if self.menu:
             frame += self.draw_menu(width, body, height)
         # Motion reports only while a menu is open, for hover; otherwise every mouse move

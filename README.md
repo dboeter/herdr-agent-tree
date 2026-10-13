@@ -9,7 +9,7 @@ of every tab, showing your workspaces as groups and their agents as a live tree:
 - Status per agent: `●` blocked, `◐` working, `✓` done, `○` idle. A row flashes when its
   agent becomes blocked or done; a collapsed workspace flashes on its agents' behalf.
 - `▎` at the left edge marks the agent in the tab you are looking at, and that workspace's name is
-  bold; other workspaces are dimmed. The selection bar shows only while the tree has
+  at full colour; other workspaces are dimmed. The selection bar shows only while the tree has
   focus, or while its menu or a rename is open.
 - An agent is named after its tab, or after its session title when the tab has
   several agents or only a number for a label.
