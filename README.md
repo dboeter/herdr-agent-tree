@@ -3,7 +3,8 @@
 A [herdr](https://herdr.dev) plugin that docks a narrow pane on the left (or right) edge
 of every tab, showing your workspaces as groups and their agents as a live tree:
 
-<img width="412" height="553" alt="image" src="https://github.com/user-attachments/assets/394d48ee-cee6-401f-8daf-1dfb343dedc2" />
+<img width="420" height="665" alt="image" src="https://github.com/user-attachments/assets/80cef306-d2e3-4b2b-b61a-64797821fca5" />
+
 
 - Status per agent: `●` blocked, `◐` working, `✓` done, `○` idle. A row flashes when its
   agent becomes blocked or done; a collapsed workspace flashes on its agents' behalf.
