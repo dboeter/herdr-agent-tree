@@ -4,7 +4,7 @@
 
 **Every workspace and agent in herdr, as a live tree beside your work**
 
-<img src="assets/tree.png" alt="Agent Tree docked beside a tab: workspaces with their agents and status marks" width="420">
+<img src="assets/tree.png" alt="Agent Tree docked beside a tab: workspaces with their agents and status marks" width="100%">
 
 <a href="https://github.com/dboeter/herdr-agent-tree/releases"><img src="https://img.shields.io/github/v/release/dboeter/herdr-agent-tree?style=flat-square" alt="Latest release"></a>
 <a href="https://github.com/dboeter/herdr-agent-tree/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/dboeter/herdr-agent-tree/ci.yml?branch=main&style=flat-square&label=CI" alt="CI"></a>
