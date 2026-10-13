@@ -7,18 +7,20 @@ of every tab, showing your workspaces as groups and their agents as a live tree:
 
 - Status per agent: `●` blocked, `◐` working, `✓` done, `○` idle. A row flashes when its
   agent becomes blocked or done; a collapsed workspace flashes on its agents' behalf.
-- `▶` marks the agent in the tab you are looking at.
+- `▎` at the left edge marks the agent in the tab you are looking at, and that workspace's name is
+  bold; other workspaces are dimmed. The selection bar shows only while the tree has
+  focus, or while its menu or a rename is open.
 - An agent is named after its tab, or after its session title when the tab has
   several agents or only a number for a label.
 - A folded workspace counts its blocked, working and done agents on its own row.
-- The footer counts all agents by status.
+- The footer counts all agents, and how many are blocked, working or done ("all idle"
+  when none are).
 
 ## Requirements
 
 - herdr 0.9.0 or newer, on Linux
 - `python3` 3.11 or newer on `PATH` (stdlib only, nothing to install)
-- A [Nerd Font](https://www.nerdfonts.com) 3.5.0 or newer for the carets and, when
-  turned on, the Claude/Codex logos; older fonts show boxes in their place
+- A [Nerd Font](https://www.nerdfonts.com) for the workspace carets and the footer's plus and settings cog
 
 ## Install
 
@@ -39,7 +41,8 @@ to `agent_tree.py` apply to trees opened afterwards.
 ## Usage
 
 A tree docks itself into a tab whenever the tab is created or focused, as long as the
-tab's tallest edge pane is at least 82 columns wide and the tab is not zoomed.
+tab's tallest edge pane is at least 84 columns wide (`auto_dock_min_width`) and the tab
+is not zoomed. Set `auto_dock = false` to only open trees with the toggle action.
 
 | Key | Action |
 |---|---|
@@ -47,10 +50,13 @@ tab's tallest edge pane is at least 82 columns wide and the tab is not zoomed.
 | `g` `G` | First / last row |
 | `1`–`9` | Jump to workspace |
 | `Enter` / `Space` / click | Focus the agent, or fold the workspace |
+| click the plus in the footer | Create a workspace in this workspace's directory and switch to it |
+| `n` | New menu: a workspace (as the plus), or a new agent or tab in the selected row's workspace |
 | `h` `l` / `←` `→` | Fold / unfold; `h` on an agent jumps to its workspace |
-| `r` | Rename the agent's tab (`Enter` saves, `Esc` cancels) |
+| `r` | Rename the workspace, or the agent's tab (`Enter` saves, `Esc` cancels) |
 | `c` `C` | Cycle the workspace colour |
-| right-click | Menu: focus, rename, fold, colour, close (`Esc` or a click elsewhere closes it) |
+| right-click | Menu: focus, rename, fold, cycle colour, close; on a workspace also a new tab, or a new agent from the `New agent ›` submenu (hover, click or `→`) (`Esc` or a click elsewhere closes it) |
+| `s` / click the cog in the footer | Settings menu: key hints, flash, default colour, auto-dock, dock side |
 | `q` | Close the tree and keep this tab free of it |
 
 Plugin actions, available from herdr's action menu:
@@ -64,17 +70,23 @@ Folded workspaces, colours and per-tab opt-outs are shared by all trees and pers
 ## Configuration
 
 Settings live in `config.toml` in the plugin's config directory
-(`herdr plugin config-dir herdr-agent-tree` prints it). Every key is optional; these
-are the defaults:
+(`herdr plugin config-dir herdr-agent-tree` prints it). Change them from the cog menu
+(`s`) or edit the file. Every key is optional; these are the defaults:
 
 ```toml
 side = "left"                # dock on the "left" or "right" edge
-logos = false                # true ends agent rows with the agent's logo (or name)
+auto_dock = true             # false: trees only open with the toggle action
+auto_dock_min_width = 84     # edge pane width (columns) a tab needs before a tree docks itself
 workspace_color = "#7dcfff"  # default workspace colour; c/C still cycles the palette
 flash = true                 # false stops rows flashing when an agent becomes blocked or done
+hints = false                # true shows the tree's keys above the footer
+agents = ["claude", "codex"]  # agents a workspace's right-click menu can start in a new tab
 ```
 
-Open trees pick up `logos`, `workspace_color` and `flash` within a few seconds. `side`
+[`config.example.toml`](config.example.toml) explains each key, with the palette's
+colours. The cog menu rewrites the file with its keys only, so comments in it are dropped.
+Open trees pick up `workspace_color`, `flash`, `hints` and `agents` within a few seconds (up to 10 s in a hidden tab);
+`auto_dock` and `auto_dock_min_width` apply from the next tab switch. `side`
 applies to new trees; to move an open tree, toggle it off and on again.
 
 ## How it works

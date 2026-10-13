@@ -1,0 +1,36 @@
+# Agent Tree settings. Copy this file to config.toml in the plugin's config directory:
+#
+#   cp config.example.toml "$(herdr plugin config-dir herdr-agent-tree)/config.toml"
+#
+# Every key is optional; the values below are the defaults. Changing a setting from the
+# cog menu (s) rewrites config.toml without these comments, so keep this file as the
+# reference.
+
+# Side of the tab the tree docks on: "left" or "right".
+# Applies to trees opened afterwards; toggle an open tree off and on to move it.
+side = "left"
+
+# Dock a tree into a tab by itself whenever the tab is created or focused. false means
+# trees only open with the "Toggle agent tree" action; open trees stay where they are.
+auto_dock = true
+
+# How wide (in columns) the tab's edge pane must be before a tree docks into it by
+# itself. The tree takes 42 columns of it, so the default leaves your pane 42.
+# The toggle action uses the lower of this and 84.
+auto_dock_min_width = 84
+
+# Default colour ("#rrggbb") of workspaces. Applies to workspaces that you haven't recoloured.
+# The palette c/C cycles through: sky #7dcfff, orange #ff9e64, green #9ece6a,
+# purple #bb9af7, pink #f776b4, yellow #e0af68, red #f7768e, teal #73daca, blue #7aa2f7.
+workspace_color = "#7dcfff"
+
+# IM-style indicator that briefly lights up a row when its agent becomes blocked or done;
+# a folded workspace lights up on its agents' behalf. false turns this off.
+flash = true
+
+# Show the tree's keys at the bottom of the tree, right above the footer divider.
+hints = false
+
+# Agents a workspace's right-click menu offers to start, each in a new tab of that
+# workspace ("New claude agent", ...). Each name is the command that starts the agent.
+agents = ["claude", "codex"]

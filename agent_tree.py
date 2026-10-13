@@ -12,6 +12,7 @@ Stdlib only. Talks to herdr over its socket API: one JSON request per connection
 except events.subscribe, which keeps the connection open and streams events.
 """
 
+import dataclasses
 import fcntl
 import json
 import os
@@ -27,7 +28,9 @@ import unicodedata
 
 PLUGIN_ID = "herdr-agent-tree"
 TOKEN = "herdr-agent-tree"  # pane metadata token marking our panes; value = unix-time heartbeat
-WIDTH = 41  # columns the docked pane aims for
+# Columns the docked pane aims for. herdr's pane width includes its border, so the
+# text area is 2 columns narrower than this.
+WIDTH = 42
 HEARTBEAT = 8
 # A token older than this marks a tree whose process died, to be replaced.
 STALE = 20
@@ -56,9 +59,28 @@ def config():
         return {}
 
 
-def side():
-    """The edge trees dock on: `side = "left"` (default) or `"right"` in config.toml."""
-    return "right" if config().get("side") == "right" else "left"
+def set_config(key, value):
+    """Write one key into config.toml, keeping the others. The file is rewritten flat,
+    so comments in it are lost; every setting is a top-level scalar or string array."""
+    cfg = config()
+    cfg[key] = value
+    lines = []
+    for k, v in cfg.items():
+        if isinstance(v, bool):
+            v = "true" if v else "false"
+        elif isinstance(v, str) or (
+            isinstance(v, list) and all(isinstance(x, str) for x in v)
+        ):
+            # JSON strings and string arrays are valid TOML as they are.
+            v = json.dumps(v)
+        elif not isinstance(v, (int, float)):
+            continue  # tables and other arrays are not settings this plugin writes
+        lines.append(f"{k} = {v}")
+    os.makedirs(CONFIG, exist_ok=True)
+    tmp = os.path.join(CONFIG, "config.toml.tmp")
+    with open(tmp, "w") as f:
+        f.write("\n".join(lines) + "\n")
+    os.replace(tmp, os.path.join(CONFIG, "config.toml"))
 
 
 def hex_rgb(value):
@@ -69,6 +91,45 @@ def hex_rgb(value):
         except ValueError:
             pass
     return None
+
+
+@dataclasses.dataclass
+class Settings:
+    """config.toml, parsed, with the defaults config.example.toml documents."""
+
+    side: str = "left"  # the edge trees dock on: "left" or "right"
+    auto_dock: bool = True  # false stops the event hooks; toggle still docks by hand
+    # How wide a tab's edge pane must be before a tree docks into it on its own.
+    auto_dock_min_width: int = 2 * WIDTH
+    workspace_color: tuple | None = None  # (r, g, b) overriding PALETTE[0]
+    flash: bool = True
+    hints: bool = False
+    # Agent kinds a workspace's right-click menu offers to start in a new tab; each is
+    # also the command that starts it.
+    agents: tuple = ("claude", "codex")
+
+
+def settings():
+    """Settings from config.toml. A key that is missing or of the wrong type keeps its
+    default: only false turns auto_dock or flash off, only true turns hints on."""
+    cfg = config()
+    width = cfg.get("auto_dock_min_width")
+    agents = cfg.get("agents")
+    if not (isinstance(agents, list) and all(isinstance(a, str) and a for a in agents)):
+        agents = Settings.agents
+    return Settings(
+        side="right" if cfg.get("side") == "right" else "left",
+        auto_dock=cfg.get("auto_dock") is not False,
+        # The default leaves the split pane at least as wide as the tree; never below
+        # WIDTH + 1, or nothing would be left of it.
+        auto_dock_min_width=2 * WIDTH
+        if isinstance(width, bool) or not isinstance(width, int)
+        else max(WIDTH + 1, width),
+        workspace_color=hex_rgb(cfg.get("workspace_color")),
+        flash=cfg.get("flash") is not False,
+        hints=cfg.get("hints") is True,
+        agents=tuple(agents),
+    )
 
 
 # --- socket API -----------------------------------------------------------------
@@ -188,7 +249,7 @@ def fit(pane_id):
     call("layout.set_split_ratio", {"pane_id": pane_id, "path": path, "ratio": ratio})
 
 
-def dock(tab):
+def dock(tab, min_width):
     # Re-snapshot: a pane list goes stale the moment anything in it closes.
     snap = snapshot()
     anchor = next((p for p in snap["panes"] if p["tab_id"] == tab), None)
@@ -197,20 +258,27 @@ def dock(tab):
     lay = call("pane.layout", {"pane_id": anchor["pane_id"]})["layout"]
     if lay["zoomed"]:
         return
-    on_left = side() == "left"
+    on_left = settings().side == "left"
     area = lay["area"]
-    right = lambda r: r["x"] + r["width"]
+
+    def right_x(rect):
+        return rect["x"] + rect["width"]
+
     edge = [
         p
         for p in lay["panes"]
-        if (p["rect"]["x"] == area["x"] if on_left else right(p["rect"]) == right(area))
+        if (
+            p["rect"]["x"] == area["x"]
+            if on_left
+            else right_x(p["rect"]) == right_x(area)
+        )
     ]
     if not edge:
         return
     # Splitting the tallest edge pane gives the tallest column herdr allows:
     # panes cannot be inserted at a tab's layout root.
     target = max(edge, key=lambda p: p["rect"]["height"])
-    if target["rect"]["width"] < 2 * WIDTH:
+    if target["rect"]["width"] < min_width:
         return
     res = call(
         "plugin.pane.open",
@@ -246,10 +314,12 @@ def ensure_tab(snap):
         return
     for p in mine:
         call("pane.close", {"pane_id": p["pane_id"]})
-    dock(tab)
+    dock(tab, settings().auto_dock_min_width)
 
 
 def ensure(blocking):
+    if not settings().auto_dock:
+        return
     if load("disabled.json", False) or not lock(blocking):
         return
     ensure_tab(snapshot())
@@ -270,7 +340,8 @@ def toggle():
         snoozed.append(tab)
     save("snoozed.json", snoozed)
     if not mine:
-        dock(tab)
+        # By hand the tree docks wherever auto-docking would, and never needs more.
+        dock(tab, min(2 * WIDTH, settings().auto_dock_min_width))
 
 
 def toggle_all():
@@ -296,33 +367,35 @@ STATUS = {  # agent_status -> glyph, colour
     "idle": ("○", (110, 110, 120)),
     "unknown": ("·", (110, 110, 120)),
 }
-KIND = {  # brand colours
-    "claude": (217, 119, 87),  # Claude orange #D97757
-    "codex": (255, 255, 255),  # OpenAI's mark is monochrome; white, not its green
-    "gemini": (71, 150, 227),  # Gemini blue #4796E3
-    "opencode": (140, 140, 150),  # monochrome brand; grey reads on dark themes
-}
-# Logos shown instead of the agent name. Nerd Fonts codicons, added in Nerd Fonts
-# 3.5.0: an older patched font renders these as boxes. Unlisted agents keep their name.
-ICON = {
-    "claude": "",  # cod-claude
-    "codex": "",  # cod-openai
-}
 DIM = (110, 110, 120)
 GROUP = (125, 207, 255)
 # Workspace colours, cycled with c/C or the right-click menu; index 0 is the default.
-PALETTE = [
-    GROUP,
-    (255, 158, 100),  # orange
-    (158, 206, 106),  # green
-    (187, 154, 247),  # purple
-    (247, 118, 180),  # pink
-    (224, 175, 104),  # yellow
-    (247, 118, 142),  # red
-    (115, 218, 202),  # teal
-    (122, 162, 247),  # blue
+# config.example.toml lists the same colours in hex; keep the two in step.
+SWATCHES = [
+    ("sky", GROUP),
+    ("orange", (255, 158, 100)),
+    ("green", (158, 206, 106)),
+    ("purple", (187, 154, 247)),
+    ("pink", (247, 118, 180)),
+    ("yellow", (224, 175, 104)),
+    ("red", (247, 118, 142)),
+    ("teal", (115, 218, 202)),
+    ("blue", (122, 162, 247)),
 ]
-SELECT_BG = (54, 64, 104)
+PALETTE = [rgb for _, rgb in SWATCHES]
+COG = "\uf013"  # fa-cog
+PLUS = "\uf067"  # fa-plus: new workspace, left of the cog
+# Key hints as (key, action) groups, one line each in a wide pane, with focus and
+# colour last so they share a column. hint_lines lays them out in aligned columns,
+# wrapping a group when the pane is too narrow.
+HINTS = [
+    [("j/k", "move"), ("h/l", "fold")],
+    [("n", "new"), ("r", "rename"), ("⏎", "focus")],
+    [("s", "settings"), ("q", "close"), ("c", "colour")],
+]
+SELECT_BG = (40, 45, 70)  # selected row, halfway between BASE_BG and MENU_SELECT
+HERE_BG = (32, 34, 50)  # the you-are-here row, a step below SELECT_BG
+MENU_SELECT = (54, 64, 104)  # highlighted menu item; must stand out from MENU_BG
 MENU_BG = (36, 40, 59)  # right-click menu, a step above BASE_BG
 PAD = 1  # blank columns between the pane border and the text
 FLASH = 4.0  # seconds a row stays lit after its agent changes state
@@ -336,7 +409,29 @@ def blend(a, b, t):
     return tuple(round(x + (y - x) * t) for x, y in zip(a, b))
 
 
-def build(snap, collapsed, here, colors, logos=False, default=None):
+def fg(rgb):
+    """SGR parameters for a truecolour foreground; bg() is the background twin."""
+    r, g, b = rgb
+    return f"38;2;{r};{g};{b}"
+
+
+def bg(rgb):
+    r, g, b = rgb
+    return f"48;2;{r};{g};{b}"
+
+
+def status_counts(agents, sep):
+    """A segment per state that wants attention, sep before each: e.g. " ● 2"."""
+    segs = []
+    for status in ("blocked", "working", "done"):
+        n = sum(a["agent_status"] == status for a in agents)
+        if n:
+            glyph, colour = STATUS[status]
+            segs.append((f"{sep}{glyph} {n}", colour, False))
+    return segs
+
+
+def build(snap, collapsed, here, colors, default=None):
     """Rows as (key, kind, payload, segments, flex); segments are (text, colour, bold)."""
     tabs = {t["tab_id"]: t for t in snap["tabs"]}
     per_tab = {}
@@ -357,22 +452,24 @@ def build(snap, collapsed, here, colors, logos=False, default=None):
         open_ = wid not in collapsed
         index = colors.get(wid, 0) % len(PALETTE)
         # Index 0 is the default slot; workspace_color in config.toml overrides it.
-        colour = default if index == 0 and default else PALETTE[index]
+        ws_colour = default if index == 0 and default else PALETTE[index]
+        # The workspace you are looking at is bold at full colour; the others are dimmed,
+        # so the mark survives folding the workspace and hiding its marked row.
+        is_here = tabs.get(here, {}).get("workspace_id") == wid
         segs = [
             (f"{w['number']} ", DIM, False),
-            # fa-caret_down / fa-caret_right: full-height carets; ▼/▶ would clash
-            # with the ▶ you-are-here marker on agent rows.
+            # fa-caret_down / fa-caret_right: full-height carets.
             (" " if open_ else " ", DIM, False),
-            (w["label"], colour, True),
+            (
+                w["label"],
+                ws_colour if is_here else blend(ws_colour, BASE_BG, 0.3),
+                is_here,
+            ),
         ]
         rows.append((("ws", wid), "ws", w, segs, 2))
         if not open_:
             # Counts stand in for the hidden agent rows, so only a folded workspace shows them.
-            for status in ("blocked", "working", "done"):
-                n = sum(a["agent_status"] == status for a in agents)
-                if n:
-                    glyph, colour = STATUS[status]
-                    segs.append((f" {glyph} {n}", colour, False))
+            segs += status_counts(agents, " ")
             continue
         for i, a in enumerate(agents):
             label = tabs.get(a["tab_id"], {}).get("label") or ""
@@ -383,37 +480,63 @@ def build(snap, collapsed, here, colors, logos=False, default=None):
             glyph, colour = STATUS.get(a["agent_status"], STATUS["unknown"])
             is_here = a["tab_id"] == here
             segs = [
-                ("▶ " if is_here else "  ", colour, False),
+                # Blank; its colour is the workspace's, which the draw uses for the
+                # you-are-here mark it puts in the pad column (see paint's mark).
+                ("  ", ws_colour, False),
                 ("└ " if i == len(agents) - 1 else "├ ", DIM, False),
                 (f"{glyph} ", colour, False),
                 (label, None, is_here),
             ]
-            if logos:
-                segs.append(
-                    (
-                        f" {ICON.get(a['agent'], a['agent'])}",
-                        # Logos are dimmed halfway to the background so the status glyph
-                        # stays the loudest thing on the row; agent names stay readable.
-                        blend(KIND.get(a["agent"], DIM), BASE_BG, 0.5)
-                        if a["agent"] in ICON
-                        else KIND.get(a["agent"], DIM),
-                        False,
-                    )
-                )
             rows.append((("agent", a["pane_id"]), "agent", a, segs, 3))
     return rows
 
 
 def summary(snap):
-    """Footer segments: agent total, then a count per status that has any."""
+    """Footer segments: agent total, then a count per state that wants attention.
+    Idle is left out (with everything idle it would just repeat the total), so an
+    all-idle footer says so instead."""
     agents = snap["agents"]
+    if not agents:
+        return [("no agents", DIM, False)]
     segs = [(f"{len(agents)} agent{'' if len(agents) == 1 else 's'}", DIM, False)]
-    for status in ("blocked", "working", "done", "idle"):
-        n = sum(a["agent_status"] == status for a in agents)
-        if n:
-            glyph, colour = STATUS[status]
-            segs.append((f"  {glyph} {n}", colour, False))
+    segs += status_counts(agents, "  ")
+    if len(segs) == 1:
+        segs.append((" · idle" if len(agents) == 1 else " · all idle", DIM, False))
     return segs
+
+
+def hint_lines(width):
+    """HINTS as paint segments that fit width (PAD included): keys in the default colour
+    so they stand out, actions dimmed. Each group wraps every k hints, and all lines
+    share one set of aligned columns. Picks the fewest lines that fit, preferring
+    columns two apart over one apart, and as a last resort one hint per line."""
+    room = width - PAD
+
+    def size(hint):
+        return cols(f"{hint[0]} {hint[1]}")
+
+    best = None
+    for k in range(max(len(g) for g in HINTS), 0, -1):
+        rows = [g[i : i + k] for g in HINTS for i in range(0, len(g), k)]
+        widths = [max(size(r[i]) for r in rows if i < len(r)) for i in range(k)]
+        for space in (2, 1):
+            fits = all(
+                sum(widths[: len(r)]) + space * (len(r) - 1) <= room for r in rows
+            )
+            if k == 1 or fits:
+                score = (len(rows), -space)
+                if best is None or score < best[0]:
+                    best = (score, rows, widths, space)
+                break
+    _, rows, widths, space = best
+    lines = []
+    for row in rows:
+        segs = []
+        for i, (key, action) in enumerate(row):
+            gap = 0 if i == len(row) - 1 else widths[i] - size((key, action)) + space
+            segs += [(key, None, False), (f" {action}{' ' * gap}", DIM, False)]
+        lines.append(segs)
+    return lines
 
 
 def cols(text):
@@ -439,37 +562,33 @@ def clip(text, n):
     return text
 
 
-def paint(segs, width, bg=None, flex=None, right=False):
-    """flex: index of the segment that gives up columns first, so names shrink, not kinds.
-    right: pad the flex segment so the segments after it end PAD columns short of the
-    right edge, mirroring the left pad; a truncated row ends at that column too."""
+def paint(segs, width, back=None, flex=None, mark=None):
+    """flex: index of the segment that gives up columns when the row is too wide.
+    mark: colour of a ▎ drawn in the pad column, flush with the pane's left edge."""
     # Every line goes through here, so padding here keeps all rows aligned; the pad
     # sits inside the row background so a selected row stays one solid bar.
-    segs, width = [(" " * PAD, None, False)] + segs, max(PAD + 1, width)
+    # The you-are-here mark is an accent stripe at the edge, not an arrow: an arrow
+    # reads as a cursor, and the cursor is the selection bar.
+    lead = ("▎" + " " * (PAD - 1), mark, False) if mark else (" " * PAD, None, False)
+    segs, width = [lead] + segs, max(PAD + 1, width)
     flex = None if flex is None else flex + 1
-    over = sum(cols(t) for t, _, _ in segs) - width + (PAD if right else 0)
+    over = sum(cols(t) for t, _, _ in segs) - width
     if flex is not None and over > 0:
         text, colour, bold = segs[flex]
         keep = max(1, cols(text) - over - 1)
         segs = segs[:flex] + [(clip(text, keep) + "…", colour, bold)] + segs[flex + 1 :]
-    elif flex is not None and right and over < 0:
-        text, colour, bold = segs[flex]
-        segs = segs[:flex] + [(text + " " * -over, colour, bold)] + segs[flex + 1 :]
     out, used = [], 0
     for text, colour, bold in segs:
         if used >= width:
             break
         text = clip(text, width - used)
         used += cols(text)
-        sgr = (["1"] if bold else []) + (
-            [f"38;2;{colour[0]};{colour[1]};{colour[2]}"] if colour else []
-        )
+        sgr = (["1"] if bold else []) + ([fg(colour)] if colour else [])
         # Reset with 22/39 rather than 0 so a selected row keeps its background.
         out.append(f"\x1b[{';'.join(sgr)}m{text}\x1b[22;39m" if sgr else text)
     line = "".join(out) + " " * (width - used)
-    if bg:
-        r, g, b = bg
-        return f"\x1b[48;2;{r};{g};{b}m{line}\x1b[49m"
+    if back:
+        return f"\x1b[{bg(back)}m{line}\x1b[49m"
     return line
 
 
@@ -487,6 +606,7 @@ EVENTS = [
     "tab.renamed",
     "tab.moved",
     "tab.focused",
+    "pane.focused",  # the selection bar shows only while the tree's own pane has focus
     "pane.created",
     "pane.closed",
     "pane.updated",
@@ -501,6 +621,15 @@ KEYS = re.compile(
 # An escape sequence cut off by the end of a read. A bare ESC is not held: it is the
 # Escape key far more often than a split sequence.
 PARTIAL = re.compile(rb"\x1b(\[[<0-9;]*|O)\Z")
+
+
+def mouse(m):
+    """(button, x, y, release) of an SGR mouse report matched by KEYS, else None."""
+    if not (m and m.group(1)):
+        return None
+    return int(m.group(1)), int(m.group(2)), int(m.group(3)), m.group(4) == b"m"
+
+
 MIN_GAP = 0.4  # seconds between event-driven refreshes; agent titles churn constantly
 POLL = 3.0  # refresh anyway; status changes are not all covered by subscribable events
 # A tree in a hidden tab only shows on arrival, so it refreshes this rarely and skips
@@ -541,6 +670,56 @@ def noise(line, focused):
     return any(k == TOKEN or k.startswith("herdr-sidebar") for k in tokens)
 
 
+@dataclasses.dataclass
+class Menu:
+    key: tuple  # the row it belongs to
+    items: list  # (label, action); an action that is a list of items opens a submenu
+    sel: int = 0  # the highlighted item
+    box: tuple | None = None  # (x, y, width) on screen from the last draw
+    settings: bool = False  # the cog menu rather than a row's right-click menu
+    sub: "Menu | None" = None  # the submenu open beside the highlighted item
+
+    def hit(self, x, y):
+        """Index of the item at screen cell (x, y), or None."""
+        if self.box:
+            bx, by, bw = self.box
+            # Items sit between the top and bottom border lines.
+            if bx <= x < bx + bw and by < y <= by + len(self.items):
+                return y - by - 1
+        return None
+
+
+SUBMENU = "›"  # marks an item that opens a submenu, at the right of its label
+
+
+def menu_size(menu, width):
+    """(width, height) of a menu's bordered box, at most width columns wide."""
+    label_cols = max(
+        cols(label) + (2 if isinstance(action, list) else 0)
+        for label, action in menu.items
+    )
+    return min(width, label_cols + 4), len(menu.items) + 2
+
+
+def draw_box(menu, x, y, w):
+    """A menu as a bordered box at (x, y), w wide; records it as menu.box for clicks."""
+    menu.box = (x, y, w)
+    fill = f"\x1b[{bg(MENU_BG)}m"
+    sel = f"\x1b[{bg(MENU_SELECT)}m"
+    edge = f"\x1b[{fg(DIM)}m"
+    lines = [edge + "╭" + "─" * (w - 2) + "╮"]
+    for i, (label, action) in enumerate(menu.items):
+        mark = SUBMENU if isinstance(action, list) else ""
+        label = clip(label, w - 4 - (2 if mark else 0))
+        text = f" {label}{' ' * (w - 4 - cols(label) - cols(mark))}{mark} "
+        hl = sel if i == menu.sel else ""
+        lines.append(f"{edge}│\x1b[39m{hl}{text}{fill}{edge}│")
+    lines.append(edge + "╰" + "─" * (w - 2) + "╯")
+    return "".join(
+        f"\x1b[{y + i};{x}H{fill}{line}\x1b[39;49m" for i, line in enumerate(lines)
+    )
+
+
 class Tree:
     def __init__(self):
         self.me = os.environ.get("HERDR_PANE_ID")
@@ -551,20 +730,20 @@ class Tree:
         self.focused = False  # whether our tab was the focused one at the last refresh
         self.frame = ""
         self.labels = {}  # tab_id -> label
-        self.edit = None  # [tab_id, typed bytes] while renaming a tab
-        # Right-click menu while open: the row it belongs to, its (label, action) items,
-        # the highlighted item, and its (x, y, width) on screen from the last draw.
-        self.menu = None
+        # [("ws", workspace_id) or ("tab", tab_id), old label, typed bytes] while renaming
+        self.edit = None
+        self.menu = None  # a Menu while one is open
         self.status = None  # pane_id -> agent_status at the last refresh
         self.flashes = {}  # pane_id -> (start, colour, workspace_id) of a state change
         self.redraw = True  # rows or input changed since the last draw
         self.size = None  # terminal size at the last draw
-        self.logos = False  # config.toml `logos`, re-read on every refresh
+        self.active = False  # whether this tree's own pane has focus; shows the bar
+        self.motion = False  # whether the terminal reports mouse motion (?1003h)
+        self.settings = Settings()  # config.toml at the last refresh
 
     def refresh(self):
         snap = snapshot()
-        cfg = config()
-        self.logos = cfg.get("logos") is True
+        self.settings = settings()
         mine = next((p for p in snap["panes"] if p["pane_id"] == self.me), None)
         self.here = mine["tab_id"] if mine else None
         self.labels = {t["tab_id"]: t["label"] for t in snap["tabs"]}
@@ -576,7 +755,7 @@ class Tree:
                 old = self.status.get(a["pane_id"])
                 # Only states that want you flash: blocked and done, never working/idle.
                 if (
-                    cfg.get("flash", True) is not False
+                    self.settings.flash
                     and old is not None
                     and old != a["agent_status"]
                     and a["agent_status"] in ("blocked", "done")
@@ -589,15 +768,15 @@ class Tree:
             set(load("collapsed.json", [])),
             self.here,
             load("colors.json", {}),
-            self.logos,
-            hex_rgb(cfg.get("workspace_color")),
+            self.settings.workspace_color,
         )
         self.footer = summary(snap)
         keys = [r[0] for r in self.rows]
         focused = snap.get("focused_tab_id") == self.here
+        self.active = self.me is not None and snap.get("focused_pane_id") == self.me
         if focused and not self.focused:
             # Every tab runs its own tree with its own cursor, so on arrival the cursor
-            # still sits where this tab's tree was last left. Snap it to ▶ instead.
+            # still sits where this tab's tree was last left. Snap it to the you-are-here row instead.
             tab = next((t for t in snap["tabs"] if t["tab_id"] == self.here), {})
             home = [
                 r[0]
@@ -616,13 +795,10 @@ class Tree:
         if not (self.key and self.key[0] == "agent" and self.key[1] in panes):
             self.key = keys[self.cursor] if keys else None
         # draw() shows a rename on the selected row, so drop it once that row no longer
-        # belongs to the tab being renamed (its agent or the tab itself went away).
-        row = self.rows[self.cursor] if self.rows else None
-        if self.edit and not (
-            row and row[1] == "agent" and row[2]["tab_id"] == self.edit[0]
-        ):
+        # belongs to what is being renamed (it, or its agent, went away).
+        if self.edit and self.edit[0] != self.edit_target():
             self.edit = None
-        if self.menu and self.menu["key"] != self.key:
+        if self.menu and self.menu.key != self.key:
             self.menu = None
         self.redraw = True
 
@@ -678,18 +854,109 @@ class Tree:
         save("colors.json", colors)
         self.refresh()
 
+    def new_workspace(self):
+        """Create a workspace in this tree's workspace directory and switch to it."""
+        snap = snapshot()
+        mine = {p["pane_id"] for p in tree_panes(snap)}
+        wid = next(
+            (t["workspace_id"] for t in snap["tabs"] if t["tab_id"] == self.here), None
+        )
+        # Pass cwd ourselves rather than source_workspace_id: herdr's follow policy takes
+        # the focused pane's cwd, and after a click that is this tree, which runs in the
+        # plugin root. This bypasses herdr's new_cwd setting ("home" would be ignored).
+        # A pane in this tab first, then any in the workspace.
+        panes = sorted(
+            (
+                p
+                for p in snap["panes"]
+                if p["workspace_id"] == wid and p["pane_id"] not in mine
+            ),
+            key=lambda p: p["tab_id"] != self.here,
+        )
+        params = {"focus": True}
+        cwd = next((p.get("foreground_cwd") or p.get("cwd") for p in panes), None)
+        if cwd:
+            params["cwd"] = cwd
+        call("workspace.create", params)
+
+    def add_tab(self, wid, agent=None):
+        """Open a tab in workspace wid and switch to it; with agent, start that agent."""
+        snap = snapshot()
+        mine = {p["pane_id"] for p in tree_panes(snap)}
+        params = {"workspace_id": wid, "focus": True}
+        # Pass cwd ourselves, as new_workspace does: herdr would otherwise follow the
+        # focused pane, which after a click is this tree.
+        cwd = next(
+            (
+                p.get("foreground_cwd") or p.get("cwd")
+                for p in snap["panes"]
+                if p["workspace_id"] == wid and p["pane_id"] not in mine
+            ),
+            None,
+        )
+        if cwd:
+            params["cwd"] = cwd
+        if agent:
+            params["label"] = agent
+        pane = call("tab.create", params)["root_pane"]["pane_id"]
+        if agent:
+            # Typed ahead: the shell runs it once its prompt is up, and herdr detects
+            # the agent from there. agent.start would block until the agent is ready.
+            call("pane.send_input", {"pane_id": pane, "text": agent, "keys": ["Enter"]})
+
+    def edit_target(self):
+        """What renaming the selected row renames: ("ws", workspace_id) or ("tab", tab_id)."""
+        if not self.rows:
+            return None
+        _, kind, item, _, _ = self.rows[self.cursor]
+        if kind == "ws":
+            return ("ws", item["workspace_id"])
+        return ("tab", item["tab_id"])
+
     def rename(self):
-        if self.rows and self.rows[self.cursor][1] == "agent":
-            tab = self.rows[self.cursor][2]["tab_id"]
-            self.edit = [tab, self.labels.get(tab, "").encode()]
+        target = self.edit_target()
+        if not target:
+            return
+        item = self.rows[self.cursor][2]
+        old = item["label"] if target[0] == "ws" else self.labels.get(target[1], "")
+        self.edit = [target, old, old.encode()]
+
+    def new_items(self, wid):
+        """Menu items that open a new agent or tab in workspace wid."""
+        items = []
+        agents = [
+            (agent, lambda agent=agent: self.add_tab(wid, agent))
+            for agent in self.settings.agents
+        ]
+        if agents:
+            items.append(("New agent", agents))
+        items.append(("New tab", lambda: self.add_tab(wid)))
+        return items
+
+    def new_menu(self):
+        """The n menu, for keyboard users: a new workspace first, then a new agent or
+        tab in the selected row's workspace."""
+        items = [("New workspace", self.new_workspace)]
+        if self.rows:
+            # An agent row's workspace is the nearest workspace row above it.
+            ws = next(
+                self.rows[i]
+                for i in range(self.cursor, -1, -1)
+                if self.rows[i][1] == "ws"
+            )
+            items += self.new_items(ws[2]["workspace_id"])
+        self.menu = Menu(self.key, items)
 
     def open_menu(self):
         if not self.rows:
             return
         _, kind, item, _, _ = self.rows[self.cursor]
         if kind == "ws":
-            shut = item["workspace_id"] in set(load("collapsed.json", []))
+            wid = item["workspace_id"]
+            shut = wid in set(load("collapsed.json", []))
             items = [("Unfold" if shut else "Fold", self.activate)]
+            items += self.new_items(wid)
+            items.append(("Rename workspace", self.rename))
         else:
             items = [
                 ("Focus", self.activate),
@@ -697,13 +964,9 @@ class Tree:
                 # The first left() climbs to the workspace row, the second folds it.
                 ("Fold workspace", lambda: (self.left(), self.left())),
             ]
-        items += [
-            ("Next colour", lambda: self.recolor(1)),
-            ("Previous colour", lambda: self.recolor(-1)),
-        ]
+        items.append(("Cycle colour", lambda: self.recolor(1)))
         # Last, away from the default selection: closing takes everything inside with it.
         if kind == "ws":
-            wid = item["workspace_id"]
             items.append(
                 (
                     "Close workspace",
@@ -713,53 +976,124 @@ class Tree:
         else:
             pid = item["pane_id"]
             items.append(("Close pane", lambda: call("pane.close", {"pane_id": pid})))
-        self.menu = {"key": self.key, "items": items, "sel": 0, "box": None}
+        self.menu = Menu(self.key, items)
+
+    def open_settings(self):
+        """The cog menu: each item flips one config.toml setting and reopens the menu,
+        so its label shows the new value."""
+        s = self.settings
+        hints, flash, auto = s.hints, s.flash, s.auto_dock
+        right = s.side == "right"
+        current = s.workspace_color or GROUP
+        index = PALETTE.index(current) if current in PALETTE else -1
+        nxt = (index + 1) % len(PALETTE)
+
+        def flip(key, value):
+            def run():
+                set_config(key, value)
+                self.refresh()
+                self.open_settings()
+
+            return run
+
+        items = [
+            (f"Key hints: {'on' if hints else 'off'}", flip("hints", not hints)),
+            (f"Flash: {'on' if flash else 'off'}", flip("flash", not flash)),
+            (
+                f"Default colour: {SWATCHES[index][0] if index >= 0 else 'custom'}",
+                flip("workspace_color", "#{:02x}{:02x}{:02x}".format(*PALETTE[nxt])),
+            ),
+            (f"Auto-dock: {'on' if auto else 'off'}", flip("auto_dock", not auto)),
+            # side only applies to trees docked after the change; open ones stay put.
+            (
+                f"Dock: {'right' if right else 'left'} (new trees)",
+                flip("side", "left" if right else "right"),
+            ),
+        ]
+        # A flip reopens the menu; keep its highlight on the item just changed.
+        sel = self.menu.sel if self.menu and self.menu.settings else 0
+        self.menu = Menu(self.key, items, sel, settings=True)
 
     def menu_run(self, i):
-        action = self.menu["items"][i][1]
-        self.menu = None
+        menu = self.menu
+        menu.sel = i
+        action = menu.items[i][1]
+        if isinstance(action, list):
+            menu.sub = Menu(menu.key, action)
+            return
+        # A settings item reopens the menu itself and keeps the highlight on item i.
+        self.menu = dataclasses.replace(menu, sel=i) if menu.settings else None
         action()
 
+    def menu_hover(self, i):
+        """Highlight item i of the top menu, opening its submenu or closing another."""
+        menu = self.menu
+        menu.sel = i
+        if not isinstance(menu.items[i][1], list):
+            menu.sub = None
+        elif not menu.sub:
+            self.menu_run(i)
+
     def menu_key(self, tok, m):
-        n = len(self.menu["items"])
-        if m and m.group(1):  # SGR mouse
-            button, x, y = int(m.group(1)), int(m.group(2)), int(m.group(3))
-            if m.group(4) == b"m":
+        menu = self.menu
+        inner = menu.sub or menu  # keys and the wheel act on the innermost menu
+        n = len(inner.items)
+        if click := mouse(m):
+            button, x, y, release = click
+            if release:
                 return
             if button in (64, 65):
-                self.menu["sel"] = (self.menu["sel"] + (1 if button == 65 else -1)) % n
+                inner.sel = (inner.sel + (1 if button == 65 else -1)) % n
                 return
-            box = self.menu["box"]
-            if button == 0 and box:
-                bx, by, bw = box
-                # Items sit between the top and bottom border lines.
-                if bx <= x < bx + bw and by < y <= by + n:
-                    return self.menu_run(y - by - 1)
+            in_sub = menu.sub and menu.sub.hit(x, y)
+            in_top = menu.hit(x, y)
+            if button >= 32:  # motion (?1003h, on while a menu is open): hover
+                if in_sub is not None:
+                    menu.sub.sel = in_sub
+                elif in_top is not None:
+                    self.menu_hover(in_top)
+                return
+            if button == 0 and in_sub is not None:
+                self.menu = None
+                return menu.sub.items[in_sub][1]()
+            if button == 0 and in_top is not None:
+                return self.menu_run(in_top)
             self.menu = None  # a click anywhere else dismisses the menu
         elif tok in (b"j", b"\x1b[B"):
-            self.menu["sel"] = (self.menu["sel"] + 1) % n
+            inner.sel = (inner.sel + 1) % n
         elif tok in (b"k", b"\x1b[A"):
-            self.menu["sel"] = (self.menu["sel"] - 1) % n
+            inner.sel = (inner.sel - 1) % n
+        elif tok in (b"\r", b" ", b"l", b"\x1b[C") and menu.sub:
+            self.menu = None
+            menu.sub.items[menu.sub.sel][1]()
         elif tok in (b"\r", b" "):
-            self.menu_run(self.menu["sel"])
+            self.menu_run(menu.sel)
+        elif tok in (b"l", b"\x1b[C"):
+            if isinstance(menu.items[menu.sel][1], list):
+                self.menu_run(menu.sel)
+        elif tok in (b"h", b"\x1b[D", b"\x1b", b"q") and menu.sub:
+            menu.sub = None
         elif tok in (b"\x1b", b"q"):
             self.menu = None
 
     def edit_key(self, tok):
-        tab, buf = self.edit
+        (kind, target), old, buf = self.edit
         if tok == b"\r":
             label = buf.decode("utf-8", "ignore").strip()
             self.edit = None
-            if label and label != self.labels.get(tab):
-                call("tab.rename", {"tab_id": tab, "label": label})
+            if label and label != old:
+                if kind == "ws":
+                    call("workspace.rename", {"workspace_id": target, "label": label})
+                else:
+                    call("tab.rename", {"tab_id": target, "label": label})
                 self.refresh()
         elif tok in (b"\x1b", b"\x03"):
             self.edit = None
         elif tok in (b"\x7f", b"\x08"):
-            self.edit[1] = buf.decode("utf-8", "ignore")[:-1].encode()
+            self.edit[2] = buf.decode("utf-8", "ignore")[:-1].encode()
         elif tok >= b" " and not tok.startswith(b"\x1b"):
             # Bytes, not str: KEYS yields a multi-byte character one byte at a time.
-            self.edit[1] = buf + tok
+            self.edit[2] = buf + tok
 
     def close(self):
         """q: keep this tab free of the tree until toggled back."""
@@ -775,22 +1109,47 @@ class Tree:
             call("pane.close", {"pane_id": self.me})
         raise SystemExit
 
+    def footer_lines(self, height, width=None):
+        """Lines below the rows, bottom up: the summary, a divider above it, and the key
+        hints above that when they are on. The summary needs one row left above it, the
+        others two, so a short pane drops them first. draw() lays them out from this count."""
+        n = 0
+        width = width or (self.size[0] if self.size else WIDTH)
+        hints = len(hint_lines(width)) if self.settings.hints else 0
+        for lines, rows in ((1, 1), (1, 2), (hints, 2)):
+            if lines and height - n - lines >= rows:
+                n += lines
+        return n
+
+    def body(self, height):
+        """Lines for rows: all but the footer."""
+        return max(1, height - self.footer_lines(height))
+
     def key_in(self, tok, height):
+        # Focus reports (?1004h): instant, where the pane.focused refresh lags MIN_GAP.
+        if tok in (b"\x1b[I", b"\x1b[O"):
+            self.active = tok == b"\x1b[I"
+            return
         if self.edit:
             return self.edit_key(tok)
         m = KEYS.fullmatch(tok)
         if self.menu:
             return self.menu_key(tok, m)
-        if m and m.group(1):  # SGR mouse
-            button, y, release = int(m.group(1)), int(m.group(3)), m.group(4) == b"m"
-            if button == 64:
+        if click := mouse(m):
+            button, x, y, release = click
+            width = self.size[0] if self.size else 0
+            if button == 0 and not release and y == height and x >= width - 1:
+                self.open_settings()  # the cog, last cells of the footer
+            elif button == 0 and not release and y == height and x >= width - 3:
+                self.new_workspace()  # the plus, left of the cog
+            elif button == 64:
                 self.move(self.cursor - 1)
             elif button == 65:
                 self.move(self.cursor + 1)
             elif (
                 button in (0, 2)
                 and not release
-                and y < height  # the last line is the footer
+                and y <= self.body(height)  # below are the hints, divider and summary
                 and self.top + y - 1 < len(self.rows)
             ):
                 self.move(self.top + y - 1)
@@ -812,7 +1171,9 @@ class Tree:
             b"\x1b[D": self.left,
             b"l": self.right,
             b"\x1b[C": self.right,
+            b"n": self.new_menu,
             b"r": self.rename,
+            b"s": self.open_settings,
             b"c": lambda: self.recolor(1),
             b"C": lambda: self.recolor(-1),
             b"q": self.close,
@@ -839,7 +1200,7 @@ class Tree:
         if not (self.redraw or self.flashes or size != self.size):
             return height
         self.redraw, self.size = False, size
-        body = max(1, height - 1)  # the last line holds the summary footer
+        body = self.body(height)
         if self.cursor < self.top:
             self.top = self.cursor
         elif self.cursor >= self.top + body:
@@ -854,70 +1215,90 @@ class Tree:
             if key not in lit or start > lit[key][0]:
                 lit[key] = (start, colour)
         lines = []
-        for i, (key, kind, _, segs, flex) in enumerate(
+        for i, (key, kind, item, segs, flex) in enumerate(
             self.rows[self.top : self.top + body]
         ):
             selected = self.top + i == self.cursor
-            bg = SELECT_BG if selected else None
+            here = kind == "agent" and item["tab_id"] == self.here
+            # The bar is the keyboard cursor: only shown while keys reach this tree.
+            # The you-are-here row gets a fainter one of its own.
+            menu = self.menu and not self.menu.settings
+            if selected and (self.active or menu or self.edit):
+                back = SELECT_BG
+            else:
+                back = HERE_BG if here else None
             if key in lit:
                 start, colour = lit[key]
                 # Hold at peak, then fade out over the remaining FLASH - FLASH_HOLD seconds.
                 fade = min(1, (FLASH - (now - start)) / (FLASH - FLASH_HOLD)) ** 2
-                bg = blend(bg or BASE_BG, colour, 0.5 * fade)
+                back = blend(back or BASE_BG, colour, 0.5 * fade)
             if selected and self.edit:
-                # The name being typed replaces the label; show its tail when it overflows.
-                room = max(1, width - PAD - sum(cols(t) for t, _, _ in segs[:3]) - 1)
-                typed = self.edit[1].decode("utf-8", "ignore")
+                # The name being typed replaces the label (and a folded workspace's
+                # counts after it); show its tail when it overflows.
+                lead = segs[:2] if kind == "ws" else segs[:3]
+                room = max(1, width - PAD - sum(cols(t) for t, _, _ in lead) - 1)
+                typed = self.edit[2].decode("utf-8", "ignore")
                 while cols(typed) > room:
                     typed = typed[1:]
-                segs, flex = segs[:3] + [(typed + "▏", None, True)], None
-            # Agent rows push their logo to the right edge so logos line up in a column.
-            lines.append(
-                paint(segs, width, bg, flex, right=self.logos and kind == "agent")
-            )
+                segs, flex = lead + [(typed + "▏", None, True)], None
+            lines.append(paint(segs, width, back, flex, segs[0][1] if here else None))
         if not self.rows:
             lines = [paint([("no workspaces", DIM, False)], width)]
         frame = "\x1b[H" + "\r\n".join(lines) + "\x1b[J"
-        if height > 1:
-            frame += f"\x1b[{height};1H" + paint(self.footer, width)
+        extra = self.footer_lines(height, width)
+        # The key hints close off the tree, right above the divider.
+        if extra > 2:
+            for i, segs in enumerate(hint_lines(width)):
+                frame += f"\x1b[{body + 1 + i};1H" + paint(segs, width)
+        if extra > 1:
+            # A full-width divider, like herdr's own panel rule, a step fainter than DIM.
+            rule = f"\x1b[{fg(blend(DIM, BASE_BG, 0.5))}m"
+            frame += f"\x1b[{height - 1};1H{rule}{'─' * width}\x1b[39m"
+        if extra:
+            # The icons sit one cell apart: fonts draw them two cells wide.
+            icons = f"\x1b[{fg(DIM)}m{PLUS} {COG}\x1b[39m "
+            frame += f"\x1b[{height};1H" + paint(self.footer, width - 4) + icons
         if self.menu:
-            frame += self.draw_menu(width, body)
+            frame += self.draw_menu(width, body, height)
+        # Motion reports only while a menu is open, for hover; otherwise every mouse move
+        # over the pane would wake the tree.
+        if bool(self.menu) != self.motion:
+            self.motion = bool(self.menu)
+            # Leaving ?1003 switches mouse reporting off altogether, so restore ?1000.
+            out.write("\x1b[?1003h" if self.motion else "\x1b[?1003l\x1b[?1000h")
+            out.flush()
         if frame != self.frame:
             self.frame = frame
             out.write(frame)
             out.flush()
         return height
 
-    def draw_menu(self, width, body):
+    def draw_menu(self, width, body, height):
         """The menu as a bordered box under its row (above it when there is no room
-        below), painted over the frame with cursor moves."""
-        items = self.menu["items"]
-        w = min(width, max(cols(label) for label, _ in items) + 4)
-        h = len(items) + 2
+        below), or above the cog for settings, painted over the frame with cursor moves.
+        An open submenu sits right of its item, or as far right as the pane allows."""
+        menu = self.menu
+        w, h = menu_size(menu, width)
         x = max(1, min(PAD + 3, width - w + 1))  # 1-based, indented under the row
         row = self.cursor - self.top + 1  # 1-based screen line of the menu's row
         y = row + 1 if row + h <= body else max(1, row - h)
-        self.menu["box"] = (x, y, w)
-        bg = "\x1b[48;2;{};{};{}m".format(*MENU_BG)
-        sel = "\x1b[48;2;{};{};{}m".format(*SELECT_BG)
-        edge = "\x1b[38;2;{};{};{}m".format(*DIM)
-        lines = [edge + "╭" + "─" * (w - 2) + "╮"]
-        for i, (label, _) in enumerate(items):
-            label = clip(label, w - 4)
-            text = f" {label}{' ' * (w - 4 - cols(label))} "
-            hl = sel if i == self.menu["sel"] else ""
-            lines.append(f"{edge}│\x1b[39m{hl}{text}{bg}{edge}│")
-        lines.append(edge + "╰" + "─" * (w - 2) + "╯")
-        return "".join(
-            f"\x1b[{y + i};{x}H{bg}{line}\x1b[39;49m" for i, line in enumerate(lines)
-        )
+        if menu.settings:
+            x, y = max(1, width - w + 1), max(1, height - h)
+        out = draw_box(menu, x, y, w)
+        if menu.sub:
+            sw, sh = menu_size(menu.sub, width)
+            # Its first item level with the item that opened it.
+            sx = max(1, min(x + w, width - sw + 1))
+            sy = max(1, min(y + menu.sel, height - sh + 1))
+            out += draw_box(menu.sub, sx, sy, sw)
+        return out
 
     def run(self):
         fd = sys.stdin.fileno()
         saved = termios.tcgetattr(fd)
         out = sys.stdout
         tty.setraw(fd)
-        out.write("\x1b[?1049h\x1b[?25l\x1b[?1000h\x1b[?1006h")
+        out.write("\x1b[?1049h\x1b[?25l\x1b[?1000h\x1b[?1006h\x1b[?1004h")
         if self.me:
             # herdr keeps right-clicks for its pane menu unless the pane opts out.
             try:
@@ -927,7 +1308,9 @@ class Tree:
         try:
             self.loop(fd, out)
         finally:
-            out.write("\x1b[?1006l\x1b[?1000l\x1b[?25h\x1b[?1049l")
+            out.write(
+                "\x1b[?1004l\x1b[?1006l\x1b[?1003l\x1b[?1000l\x1b[?25h\x1b[?1049l"
+            )
             out.flush()
             termios.tcsetattr(fd, termios.TCSADRAIN, saved)
 
