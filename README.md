@@ -78,7 +78,7 @@ Settings live in `config.toml` in the plugin's config directory
 ```toml
 side = "left"                # dock on the "left" or "right" edge
 auto_dock = true             # false: trees only open with the toggle action
-auto_dock_min_width = 84     # edge pane width (columns) a tab needs before a tree docks itself; at least 43
+auto_dock_min_width = 84     # edge pane width (columns) a tab needs before a tree docks itself
 workspace_color = "#7dcfff"  # default workspace colour; c/C still cycles the palette
 flash = true                 # false stops rows flashing when an agent becomes blocked or done
 hints = false                # true shows the tree's keys above the footer
