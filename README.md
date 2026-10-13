@@ -1,10 +1,32 @@
+<div align="center">
+
 # Agent Tree
 
+**Every workspace and agent in herdr, as a live tree beside your work**
+
+<img src="assets/tree.png" alt="Agent Tree docked beside a tab: workspaces with their agents and status marks" width="420">
+
+<a href="https://github.com/dboeter/herdr-agent-tree/releases"><img src="https://img.shields.io/github/v/release/dboeter/herdr-agent-tree?style=flat-square" alt="Latest release"></a>
+<a href="https://github.com/dboeter/herdr-agent-tree/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/dboeter/herdr-agent-tree/ci.yml?branch=main&style=flat-square&label=CI" alt="CI"></a>
+<img src="https://img.shields.io/badge/python-%E2%89%A5%203.11-blue?style=flat-square" alt="Python 3.11+">
+<a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="MIT"></a>
+
+</div>
+
+---
+
+## What it is
+
 A [herdr](https://herdr.dev) plugin that docks a narrow pane on the left (or right) edge
-of every tab, showing your workspaces as groups and their agents as a live tree:
+of every tab, showing your workspaces as groups and their agents as a live tree.
 
-<img width="420" height="665" alt="image" src="https://github.com/user-attachments/assets/80cef306-d2e3-4b2b-b61a-64797821fca5" />
+## Why
 
+With agents spread over several workspaces and tabs, the one waiting on you is easy to
+miss. The tree keeps all of them in view from whichever tab you are in: what each agent is
+doing, which one needs you, and one keypress or click to jump there.
+
+## What you get
 
 - Status per agent: `●` blocked, `◐` working, `✓` done, `○` idle. A row flashes when its
   agent becomes blocked or done; a collapsed workspace flashes on its agents' behalf.
@@ -19,25 +41,57 @@ of every tab, showing your workspaces as groups and their agents as a live tree:
 
 ## Requirements
 
-- herdr 0.9.0 or newer, on Linux
+- herdr 0.9.0 or newer, on Linux (other platforms untested)
 - `python3` 3.11 or newer on `PATH` (stdlib only, nothing to install)
 - A [Nerd Font](https://www.nerdfonts.com) for the workspace carets and the footer's plus and settings cog
 
-## Install
+## Quick start
 
 ```sh
 herdr plugin install dboeter/herdr-agent-tree
 ```
 
-Or work on a local clone:
+That is the whole install: the next tab you create or switch to gets a tree. Nothing
+needs a restart.
+
+To show or hide every tree with one key, add this to herdr's `config.toml` (`prefix` is
+`ctrl+b` by default; pick any key that is free in your config). Use
+`herdr-agent-tree.toggle` instead for the focused tab only:
+
+```toml
+[[keys.command]]
+key = "prefix+shift+a"
+type = "plugin_action"
+command = "herdr-agent-tree.toggle-all"
+description = "Toggle agent tree everywhere"
+```
+
+From a local clone instead of GitHub:
 
 ```sh
 git clone https://github.com/dboeter/herdr-agent-tree
-herdr plugin link herdr-agent-tree
+herdr plugin link ./herdr-agent-tree
 ```
 
 Re-run `herdr plugin link` after editing `herdr-plugin.toml` so herdr reloads it. Edits
-to `agent_tree.py` apply to trees opened afterwards.
+to `agent_tree.py` apply to trees opened afterwards. Run the tests with
+`python3 -m unittest discover -s tests`.
+
+### Or hand it to an agent
+
+Paste this at a coding agent and it will do the install:
+
+```text
+Install the Agent Tree plugin for herdr on this machine.
+
+1. Check that `python3 --version` is 3.11 or newer. If not, stop and tell me.
+2. herdr plugin install dboeter/herdr-agent-tree
+3. Check it took: `herdr plugin list` shows herdr-agent-tree as enabled.
+
+Do NOT run `herdr server stop` and do not kill the herdr process: that ends
+every program in every pane, including whatever is running you. Nothing here
+needs a restart; a tree appears in the next tab I switch to.
+```
 
 ## Usage
 
@@ -102,6 +156,41 @@ pane updates and re-reads every 10 s instead. A tree whose heartbeat is older
 than 20 s, such as one restored from a saved session without its process, is replaced
 on the next focus.
 
+## Troubleshooting
+
+**No tree appears in a tab.** A tree only docks itself when the tab's tallest edge pane is
+at least `auto_dock_min_width` (84) columns wide and the tab is not zoomed. It also stays
+away from tabs you closed it in with `q`, and from every tab after **Toggle agent tree
+everywhere** or with `auto_dock = false`. Run **Toggle agent tree in this tab** to dock one
+by hand. If that fails too, read the hook logs:
+
+```sh
+herdr plugin log list --plugin herdr-agent-tree --limit 5
+```
+
+A `ModuleNotFoundError: No module named 'tomllib'` there means `python3` is older than 3.11.
+
+**Boxes instead of the carets, plus and cog.** The terminal font is not a
+[Nerd Font](https://www.nerdfonts.com). Install one and select it in your terminal.
+
+**A pane titled "Agent Tree" shows a plain shell.** herdr restored a saved session, which
+brings back the pane but not its process. The plugin replaces it the next time you focus
+that tab.
+
+**Colours look off on a light theme.** The palette and the flash fade are tuned for a dark
+terminal background.
+
+## Uninstall
+
+Close every tree first with **Toggle agent tree everywhere**, then:
+
+```sh
+herdr plugin uninstall herdr-agent-tree
+```
+
+Settings and state stay behind in `$(herdr plugin config-dir herdr-agent-tree)` and
+`~/.local/state/herdr/plugins/herdr-agent-tree`; delete those directories to remove them.
+
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE). Changes per version are in [CHANGELOG.md](CHANGELOG.md).
