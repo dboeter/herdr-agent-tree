@@ -50,15 +50,16 @@ is not zoomed. Set `auto_dock = false` to only open trees with the toggle action
 | `j` `k` / `↓` `↑` / wheel | Move |
 | `g` `G` | First / last row |
 | `1`–`9` | Jump to workspace |
-| `Enter` / `Space` / click | Focus the agent, or fold the workspace |
+| `Enter` / `Space` / click | Focus the agent, or fold/unfold the workspace |
 | click the plus in the footer | Create a workspace in this workspace's directory and switch to it |
 | `n` | New menu: a workspace (as the plus), or a new agent or tab in the selected row's workspace |
 | `h` `l` / `←` `→` | Fold / unfold; `h` on an agent jumps to its workspace |
 | `r` | Rename the workspace, or the agent's tab (`Enter` saves, `Esc` cancels) |
 | `c` `C` | Cycle the workspace colour |
-| right-click | Menu: focus, rename, fold, cycle colour, close; on a workspace also a new tab, or a new agent from the `New agent ›` submenu (hover, click or `→`) (`Esc` or a click elsewhere closes it) |
+| right-click | On an agent: focus, rename tab, fold workspace, cycle colour, close pane. On a workspace: fold/unfold, a new agent from the `New agent ›` submenu (hover, click or `→`), new tab, rename, cycle colour, close workspace. `Esc` or a click elsewhere closes the menu |
 | `s` / click the cog in the footer | Settings menu: key hints, flash, default colour, auto-dock, dock side |
 | `q` | Close the tree and keep this tab free of it |
+| `Ctrl-C` | Quit the tree process only; auto-dock brings it back within about 20 s |
 
 Plugin actions, available from herdr's action menu:
 
@@ -77,7 +78,7 @@ Settings live in `config.toml` in the plugin's config directory
 ```toml
 side = "left"                # dock on the "left" or "right" edge
 auto_dock = true             # false: trees only open with the toggle action
-auto_dock_min_width = 84     # edge pane width (columns) a tab needs before a tree docks itself
+auto_dock_min_width = 84     # edge pane width (columns) a tab needs before a tree docks itself; at least 43
 workspace_color = "#7dcfff"  # default workspace colour; c/C still cycles the palette
 flash = true                 # false stops rows flashing when an agent becomes blocked or done
 hints = false                # true shows the tree's keys above the footer
@@ -100,3 +101,7 @@ and writes a heartbeat to its pane metadata every 8 s. A tree in a hidden tab ig
 pane updates and re-reads every 10 s instead. A tree whose heartbeat is older
 than 20 s, such as one restored from a saved session without its process, is replaced
 on the next focus.
+
+## License
+
+[MIT](LICENSE)

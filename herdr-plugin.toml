@@ -7,7 +7,7 @@
 
 id = "herdr-agent-tree"
 name = "Agent Tree"
-version = "0.1.0"
+version = "0.2.0"
 min_herdr_version = "0.9.0"
 description = "Workspaces and their agents as a live tree, docked on the left or right of every tab."
 platforms = ["linux"]

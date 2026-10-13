@@ -16,7 +16,7 @@ auto_dock = true
 
 # How wide (in columns) the tab's edge pane must be before a tree docks into it by
 # itself. The tree takes 42 columns of it, so the default leaves your pane 42.
-# The toggle action uses the lower of this and 84.
+# The toggle action uses the lower of this and 84. Values below 43 count as 43.
 auto_dock_min_width = 84
 
 # Default colour ("#rrggbb") of workspaces. Applies to workspaces that you haven't recoloured.
