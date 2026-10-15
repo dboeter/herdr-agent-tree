@@ -153,7 +153,9 @@ applies to new trees; to move an open tree, toggle it off and on again.
 `agent_tree.py` is one script with several modes. Herdr runs `--ensure` on tab and
 workspace events; after 0.3 s it moves the live tree into whichever tab has focus by
 then, with `pane.move` at its final width so the tab resizes once (or opens a tree if none
-is alive), and closes any spare trees. Flicking through tabs moves the tree once. A move to another workspace gives the
+is alive), and closes any spare trees. Flicking through tabs moves the tree once. The
+tree leaves a blank "Agent Tree slot" pane in the tab it leaves, a sleeping `sh` that holds
+its column; moving back fills that slot, so only a tab's first visit resizes its panes. A move to another workspace gives the
 pane a new id, which `--ensure` writes to `tree.json` in the state directory for the tree
 to pick up. The tree is one `--ui` process. It subscribes to herdr's event stream,
 re-reads the session snapshot at most every 0.4 s on events (and every 3 s regardless),
@@ -183,6 +185,10 @@ A `ModuleNotFoundError: No module named 'tomllib'` there means `python3` is olde
 **A pane titled "Agent Tree" shows a plain shell.** herdr restored a saved session, which
 brings back the pane but not its process. The startup hook closes these when herdr starts;
 one that slips through is replaced the next time you focus that tab.
+
+**A blank pane titled "Agent Tree slot".** It holds the tree's column in a tab the tree
+moved out of, and fills up again when you come back. **Toggle agent tree everywhere**
+closes them all along with the tree.
 
 **Colours look off on a light theme.** The palette and the flash fade are tuned for a dark
 terminal background.

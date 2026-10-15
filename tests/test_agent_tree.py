@@ -311,6 +311,8 @@ class DockTest(ConfigDir):
                 return {"layout": lay}
             if method == "pane.move":
                 return {"move_result": {"changed": True, "pane": {"pane_id": "w2:p9"}}}
+            if method == "plugin.pane.open":  # the slot left behind
+                return {"plugin_pane": {"pane": {"pane_id": "w1:p8"}}}
             return {}
 
         self.write('side = "right"\n')
@@ -328,6 +330,46 @@ class DockTest(ConfigDir):
         save.assert_called_once_with("tree.json", {"pane_id": "w2:p9"})
 
 
+class SlotTest(ConfigDir):
+    def test_the_tree_fills_a_slot_and_leaves_one_behind(self):
+        lay = {"zoomed": False, "area": {}, "panes": []}
+        calls = []
+
+        def call(method, params=None):
+            calls.append((method, params))
+            if method == "pane.layout":
+                return {"layout": lay}
+            if method == "pane.move":
+                return {"move_result": {"changed": True, "pane": {"pane_id": "w2:p9"}}}
+            if method == "plugin.pane.open":
+                return {"plugin_pane": {"pane": {"pane_id": "w1:p8"}}}
+            return {}
+
+        snap = {
+            "panes": [
+                {"pane_id": "w2:p1", "tab_id": "t2"},
+                {"pane_id": "w2:p5", "tab_id": "t2", "label": at.SLOT_TITLE},
+            ]
+        }
+        with (
+            mock.patch.object(at, "call", call),
+            mock.patch.object(at, "snapshot", return_value=snap),
+            mock.patch.object(at, "save"),
+        ):
+            at.dock("t2", 0, {"pane_id": "w1:p9"})
+        methods = [m for m, _ in calls]
+        opened = next(p for m, p in calls if m == "plugin.pane.open")
+        self.assertEqual(
+            (opened["entrypoint"], opened["target_pane_id"]), ("slot", "w1:p9")
+        )
+        move = next(p for m, p in calls if m == "pane.move")["destination"]
+        self.assertEqual((move["target_pane_id"], move["split"]), ("w2:p5", "down"))
+        self.assertEqual(calls[-1], ("pane.close", {"pane_id": "w2:p5"}))
+        # The slot already has the tree's width: no swap, no fit.
+        self.assertNotIn("pane.swap", methods)
+        self.assertNotIn("layout.set_split_ratio", methods)
+
+
 class ConsistencyTest(unittest.TestCase):
     """Facts kept in two files, which comments ask to keep in step."""
 
@@ -336,6 +378,7 @@ class ConsistencyTest(unittest.TestCase):
             manifest = tomllib.load(f)
         self.assertEqual(manifest["id"], at.PLUGIN_ID)
         self.assertEqual(manifest["panes"][0]["title"], at.TITLE)
+        self.assertEqual(manifest["panes"][1]["title"], at.SLOT_TITLE)
 
     def test_example_config_matches_defaults_and_palette(self):
         path = os.path.join(ROOT, "config.example.toml")

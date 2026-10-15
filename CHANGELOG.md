@@ -5,7 +5,9 @@
 - One tree for the whole session: focusing a tab moves the tree into it instead of
   starting a tree process per tab, so its cursor, folds and flashes carry over. Trees
   from earlier versions are closed as tabs are focused. The tree moves in at its final
-  width, and only once focus has rested on a tab for 0.3 s.
+  width, and only once focus has rested on a tab for 0.3 s. It leaves a blank slot pane
+  behind that it fills on the way back, so the panes beside it resize only on a tab's
+  first visit.
 - A startup hook closes the dead trees a restored session leaves in every tab and docks
   one in the focused tab, instead of each tab showing a plain shell until it is focused.
 - The heartbeat token is reported with a 20 s time-to-live, so herdr drops it when a tree

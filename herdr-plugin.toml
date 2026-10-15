@@ -18,6 +18,14 @@ title = "Agent Tree"  # agent_tree.py's TITLE matches this to find trees restore
 placement = "split"
 command = ["sh", "-c", "exec python3 \"${HERDR_PLUGIN_ROOT:?not launched by herdr}/agent_tree.py\" --ui"]
 
+# Holds the tree's column in a tab the tree moved out of, so moving back in fills the
+# slot instead of resizing the panes beside it. Blank, cursor hidden, asleep.
+[[panes]]
+id = "slot"
+title = "Agent Tree slot"  # agent_tree.py's SLOT_TITLE matches this
+placement = "split"
+command = ["sh", "-c", "printf '\\033[?25l'; exec sleep infinity"]
+
 [[actions]]
 id = "toggle"
 title = "Toggle agent tree in this tab"

@@ -49,6 +49,8 @@ SETTLE = 0.3
 # survives as the label, the tokens and the tree process do not. Must equal the
 # [[panes]] title in herdr-plugin.toml.
 TITLE = "Agent Tree"
+# The [[panes]] title of the blank pane that holds the tree's column in a tab it left.
+SLOT_TITLE = "Agent Tree slot"
 SCRIPT = os.path.abspath(__file__)
 SOCK = os.environ.get("HERDR_SOCKET_PATH") or os.path.expanduser(
     "~/.config/herdr/herdr.sock"
@@ -227,6 +229,10 @@ def tree_panes(snap, tab=None):
     ]
 
 
+def slots(snap):
+    return [p for p in snap["panes"] if p.get("label") == SLOT_TITLE]
+
+
 def alive(pane):
     # Dead trees keep their "Agent Tree" label, which is how tree_panes still finds them.
     return TOKEN in (pane.get("tokens") or {})
@@ -271,9 +277,26 @@ def fit(pane_id):
     call("layout.set_split_ratio", {"pane_id": pane_id, "path": path, "ratio": ratio})
 
 
+def open_pane(entrypoint, target, direction):
+    res = call(
+        "plugin.pane.open",
+        {
+            "plugin_id": PLUGIN_ID,
+            "entrypoint": entrypoint,
+            "placement": "split",
+            "target_pane_id": target,
+            "direction": direction,
+            "focus": False,
+            "env": {"HERDR_SOCKET_PATH": SOCK, "HERDR_PLUGIN_STATE_DIR": STATE},
+        },
+    )
+    return res["plugin_pane"]["pane"]["pane_id"]
+
+
 def dock(tab, min_width, tree=None):
     """Put tree (a pane in another tab) on the configured edge of tab, or open a new
-    tree there when tree is None."""
+    tree there when tree is None. The tree leaves a slot behind in the tab it leaves
+    and fills the one it finds, so after its first visit a tab never resizes."""
     # Re-snapshot: a pane list goes stale the moment anything in it closes.
     snap = snapshot()
     anchor = next((p for p in snap["panes"] if p["tab_id"] == tab), None)
@@ -283,34 +306,44 @@ def dock(tab, min_width, tree=None):
     if lay["zoomed"]:
         return
     on_left = settings().side == "left"
-    area = lay["area"]
+    slot = next((p for p in slots(snap) if p["tab_id"] == tab), None)
+    if slot:
+        # Split the slot down, then close it: the tree takes over its column whole.
+        target, split, ratio = slot, "down", 0.1
+    else:
+        area = lay["area"]
 
-    def right_x(rect):
-        return rect["x"] + rect["width"]
+        def right_x(rect):
+            return rect["x"] + rect["width"]
 
-    edge = [
-        p
-        for p in lay["panes"]
-        if (
-            p["rect"]["x"] == area["x"]
-            if on_left
-            else right_x(p["rect"]) == right_x(area)
-        )
-    ]
-    if not edge:
-        return
-    # Splitting the tallest edge pane gives the tallest column herdr allows:
-    # panes cannot be inserted at a tab's layout root.
-    target = max(edge, key=lambda p: p["rect"]["height"])
-    if target["rect"]["width"] < min_width:
-        return
-    # The ratio sizes the split's first child: the target on the right, else the tree,
-    # which the swap below then puts first. Moving straight to this size resizes the tab
-    # once; a fresh tree opens at half width and fit() shrinks it.
-    width = target["rect"]["width"]
-    share = WIDTH if on_left else width - WIDTH
+        edge = [
+            p
+            for p in lay["panes"]
+            if (
+                p["rect"]["x"] == area["x"]
+                if on_left
+                else right_x(p["rect"]) == right_x(area)
+            )
+        ]
+        if not edge:
+            return
+        # Splitting the tallest edge pane gives the tallest column herdr allows:
+        # panes cannot be inserted at a tab's layout root.
+        target = max(edge, key=lambda p: p["rect"]["height"])
+        if target["rect"]["width"] < min_width:
+            return
+        # The ratio sizes the split's first child: the target on the right, else the
+        # tree, which the swap below then puts first. Moving straight to this size
+        # resizes the tab once; a fresh tree opens at half width and fit() shrinks it.
+        width = target["rect"]["width"]
+        share = WIDTH if on_left else width - WIDTH
+        split, ratio = "right", min(0.9, max(0.1, share / width))
     new = None
     if tree:
+        try:
+            open_pane("slot", tree["pane_id"], "down")
+        except RuntimeError:
+            pass  # without a slot, coming back resizes that tab once
         moved = call(
             "pane.move",
             {
@@ -319,8 +352,8 @@ def dock(tab, min_width, tree=None):
                     "type": "tab",
                     "tab_id": tab,
                     "target_pane_id": target["pane_id"],
-                    "split": "right",
-                    "ratio": min(0.9, max(0.1, share / width)),
+                    "split": split,
+                    "ratio": ratio,
                 },
                 "focus": False,
             },
@@ -331,24 +364,15 @@ def dock(tab, min_width, tree=None):
             # Refused, e.g. while the tree's own tab is zoomed: start over here.
             call("pane.close", {"pane_id": tree["pane_id"]})
     if new is None:
-        res = call(
-            "plugin.pane.open",
-            {
-                "plugin_id": PLUGIN_ID,
-                "entrypoint": "tree",
-                "placement": "split",
-                "target_pane_id": target["pane_id"],
-                "direction": "right",
-                "focus": False,
-                "env": {"HERDR_SOCKET_PATH": SOCK, "HERDR_PLUGIN_STATE_DIR": STATE},
-            },
-        )
-        new = res["plugin_pane"]["pane"]["pane_id"]
+        new = open_pane("tree", target["pane_id"], split)
         # Stamp while still holding the lock, so a hook queued behind us sees a live tree.
         stamp(new)
         tree = None
     # A move to another workspace gives the pane a new id; the tree reads it from here.
     save("tree.json", {"pane_id": new})
+    if slot:
+        call("pane.close", {"pane_id": slot["pane_id"]})
+        return
     # herdr only splits right or down, so the tree opens right of its target: already
     # on the right edge, or swapped onto the left one. The swap focuses the tree, so
     # hand focus back.
@@ -432,7 +456,7 @@ def toggle_all():
     set_config("auto_dock", not off)
     snap = snapshot()
     if off:
-        for p in tree_panes(snap):
+        for p in tree_panes(snap) + slots(snap):
             call("pane.close", {"pane_id": p["pane_id"]})
     else:
         # "Everywhere" includes tabs closed with q, or the focused one stays empty.
