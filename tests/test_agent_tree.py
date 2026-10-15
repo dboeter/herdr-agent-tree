@@ -142,6 +142,59 @@ class BuildTest(unittest.TestCase):
         self.assertEqual(rows[0][3][2][1], at.PALETTE[1])
         self.assertEqual(rows[2][3][2][1], at.blend((1, 2, 3), at.BASE_BG, 0.3))
 
+    def test_tab_label_names_every_agent_in_its_tab(self):
+        s = snap()
+        s["agents"].append(
+            {
+                "pane_id": "p3",
+                "tab_id": "t1",
+                "workspace_id": "w1",
+                "agent_status": "idle",
+                "terminal_title_stripped": "fix tests",
+            }
+        )
+        rows = at.build(s, set(), "t1", {})
+        # A renamed tab shows on every row; the session title tells two agents apart.
+        self.assertTrue(text(rows[1][3]).endswith("api"))
+        self.assertTrue(text(rows[2][3]).endswith("api · fix tests"))
+
+
+class PaletteTest(unittest.TestCase):
+    def test_default_from_the_palette_trades_places_with_sky(self):
+        orange = at.PALETTE[1]
+        colours = at.palette(orange)
+        self.assertEqual(colours[0], orange)
+        self.assertEqual(colours[1], at.PALETTE[0])
+        self.assertEqual(sorted(colours), sorted(at.PALETTE))
+
+    def test_custom_default_takes_slot_zero(self):
+        self.assertEqual(at.palette((1, 2, 3)), [(1, 2, 3)] + at.PALETTE[1:])
+        self.assertEqual(at.palette(), at.PALETTE)
+
+
+def split(direction, x, y, w, h):
+    return {"direction": direction, "rect": {"x": x, "y": y, "width": w, "height": h}}
+
+
+class SplitPathTest(unittest.TestCase):
+    def test_nested_splits_along_one_axis(self):
+        # Root splits down (top 80, bottom 20); the top splits down again, and the tree's
+        # split is the lower half of that: first child of root, second of the next.
+        root = split("down", 0, 0, 100, 100)
+        top = split("down", 0, 0, 100, 80)
+        holder = split("right", 0, 20, 100, 60)
+        self.assertEqual(at.split_path([holder, root, top], holder), [False, True])
+
+    def test_right_edge(self):
+        root = split("right", 0, 0, 200, 50)
+        right = split("right", 100, 0, 100, 50)
+        holder = split("right", 150, 0, 50, 50)
+        self.assertEqual(at.split_path([root, right, holder], holder), [True, True])
+
+    def test_holder_is_the_root(self):
+        holder = split("right", 0, 0, 100, 50)
+        self.assertEqual(at.split_path([holder], holder), [])
+
 
 class SummaryTest(unittest.TestCase):
     def test_counts(self):
@@ -153,6 +206,13 @@ class SummaryTest(unittest.TestCase):
             a["agent_status"] = "idle"
         self.assertEqual(text(at.summary(idle)), "2 agents · all idle")
         self.assertEqual(text(at.summary(snap(agents=[]))), "no agents")
+
+    def test_unknown_is_not_idle(self):
+        s = snap()
+        for a in s["agents"]:
+            a["agent_status"] = "idle"
+        s["agents"][0]["agent_status"] = "unknown"
+        self.assertEqual(text(at.summary(s)), "2 agents")
 
 
 class TextTest(unittest.TestCase):

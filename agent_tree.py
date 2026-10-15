@@ -227,6 +227,20 @@ def inside(outer, inner):
     )
 
 
+def split_path(around, holder):
+    """The path layout.set_split_ratio addresses holder by, given every split around
+    it: one bool per ancestor from the tab's root split down, true when the next split
+    down sits in that ancestor's second child. Compare each split with its parent, not
+    holder with every ancestor: two nested splits along one axis would get it wrong."""
+    size = lambda s: s["rect"]["width"] * s["rect"]["height"]
+    chain = sorted((s for s in around if s is not holder), key=size, reverse=True)
+    path = []
+    for parent, child in zip(chain, chain[1:] + [holder]):
+        axis = "x" if parent["direction"] == "right" else "y"
+        path.append(child["rect"][axis] > parent["rect"][axis])
+    return path
+
+
 def fit(pane_id):
     """Shrink the split we just made so the tree is WIDTH columns wide."""
     lay = call("pane.layout", {"pane_id": pane_id})["layout"]
@@ -234,14 +248,8 @@ def fit(pane_id):
     around = [s for s in lay["splits"] if inside(s["rect"], me)]
     if not around:
         return
-    size = lambda s: s["rect"]["width"] * s["rect"]["height"]
-    holder = min(around, key=size)
-    # set_split_ratio addresses a split by its path from the tab's root split:
-    # one bool per ancestor, true when the next split down sits in the second child.
-    path = []
-    for s in sorted((s for s in around if s is not holder), key=size, reverse=True):
-        axis = "x" if s["direction"] == "right" else "y"
-        path.append(holder["rect"][axis] > s["rect"][axis])
+    holder = min(around, key=lambda s: s["rect"]["width"] * s["rect"]["height"])
+    path = split_path(around, holder)
     width = holder["rect"]["width"]
     # The ratio sizes the split's first child: the tree itself when it sits on the left.
     share = WIDTH if me["x"] == holder["rect"]["x"] else width - WIDTH
@@ -318,9 +326,7 @@ def ensure_tab(snap):
 
 
 def ensure(blocking):
-    if not settings().auto_dock:
-        return
-    if load("disabled.json", False) or not lock(blocking):
+    if not settings().auto_dock or not lock(blocking):
         return
     ensure_tab(snapshot())
 
@@ -345,9 +351,10 @@ def toggle():
 
 
 def toggle_all():
+    """Flip auto_dock, the same switch as the cog menu's Auto-dock, and act on it now."""
     lock(True)
-    off = not load("disabled.json", False)
-    save("disabled.json", off)
+    off = settings().auto_dock
+    set_config("auto_dock", not off)
     snap = snapshot()
     if off:
         for p in tree_panes(snap):
@@ -394,7 +401,9 @@ HINTS = [
     [("s", "settings"), ("q", "close"), ("c", "colour")],
 ]
 SELECT_BG = (40, 45, 70)  # selected row, halfway between BASE_BG and MENU_SELECT
-HERE_BG = (32, 34, 50)  # the you-are-here row, a step below SELECT_BG
+# The you-are-here row's background: BASE_BG washed with this much of its workspace
+# colour, so it reads as one highlight with the mark at its edge.
+HERE_TINT = 0.12
 MENU_SELECT = (54, 64, 104)  # highlighted menu item; must stand out from MENU_BG
 MENU_BG = (36, 40, 59)  # right-click menu, a step above BASE_BG
 PAD = 1  # blank columns between the pane border and the text
@@ -431,6 +440,18 @@ def status_counts(agents, sep):
     return segs
 
 
+def palette(default=None):
+    """PALETTE with workspace_color (config.toml) in the default slot 0. A default that
+    is one of the swatches trades places with sky, so c/C never repeats a colour and
+    sky stays reachable."""
+    colours = list(PALETTE)
+    if default:
+        if default in colours:
+            colours[colours.index(default)] = colours[0]
+        colours[0] = default
+    return colours
+
+
 def build(snap, collapsed, here, colors, default=None):
     """Rows as (key, kind, payload, segments, flex); segments are (text, colour, bold)."""
     tabs = {t["tab_id"]: t for t in snap["tabs"]}
@@ -450,9 +471,7 @@ def build(snap, collapsed, here, colors, default=None):
             ),
         )
         open_ = wid not in collapsed
-        index = colors.get(wid, 0) % len(PALETTE)
-        # Index 0 is the default slot; workspace_color in config.toml overrides it.
-        ws_colour = default if index == 0 and default else PALETTE[index]
+        ws_colour = palette(default)[colors.get(wid, 0) % len(PALETTE)]
         # The workspace you are looking at is at full colour; the others are dimmed,
         # so the mark survives folding the workspace and hiding its marked row.
         is_here = tabs.get(here, {}).get("workspace_id") == wid
@@ -472,11 +491,17 @@ def build(snap, collapsed, here, colors, default=None):
             segs += status_counts(agents, " ")
             continue
         for i, a in enumerate(agents):
-            label = tabs.get(a["tab_id"], {}).get("label") or ""
-            # One agent per tab: the tab label names it. Otherwise, or when the tab
-            # only has a number for a label, the agent's own session title does.
-            if per_tab[a["tab_id"]] > 1 or label.isdigit() or not label:
-                label = a.get("terminal_title_stripped") or label or a["pane_id"]
+            tab_label = tabs.get(a["tab_id"], {}).get("label") or ""
+            title = a.get("terminal_title_stripped") or ""
+            # A tab label names the agent, so a rename (r renames the tab) always shows;
+            # several agents in one tab add their session titles to tell them apart.
+            # A tab with only a number for a label leaves the session title alone.
+            if not tab_label or tab_label.isdigit():
+                label = title or tab_label or a["pane_id"]
+            elif per_tab[a["tab_id"]] > 1 and title:
+                label = f"{tab_label} · {title}"
+            else:
+                label = tab_label
             glyph, colour = STATUS.get(a["agent_status"], STATUS["unknown"])
             segs = [
                 # Blank; its colour is the workspace's, which the draw uses for the
@@ -493,13 +518,13 @@ def build(snap, collapsed, here, colors, default=None):
 def summary(snap):
     """Footer segments: agent total, then a count per state that wants attention.
     Idle is left out (with everything idle it would just repeat the total), so an
-    all-idle footer says so instead."""
+    all-idle footer says so instead. Agents of unknown status are not idle."""
     agents = snap["agents"]
     if not agents:
         return [("no agents", DIM, False)]
     segs = [(f"{len(agents)} agent{'' if len(agents) == 1 else 's'}", DIM, False)]
     segs += status_counts(agents, "  ")
-    if len(segs) == 1:
+    if all(a["agent_status"] == "idle" for a in agents):
         segs.append((" · idle" if len(agents) == 1 else " · all idle", DIM, False))
     return segs
 
@@ -563,12 +588,12 @@ def clip(text, n):
 
 def paint(segs, width, back=None, flex=None, mark=None):
     """flex: index of the segment that gives up columns when the row is too wide.
-    mark: colour of a ▎ drawn in the pad column, flush with the pane's left edge."""
+    mark: colour of a ▍ drawn in the pad column, flush with the pane's left edge."""
     # Every line goes through here, so padding here keeps all rows aligned; the pad
     # sits inside the row background so a selected row stays one solid bar.
     # The you-are-here mark is an accent stripe at the edge, not an arrow: an arrow
     # reads as a cursor, and the cursor is the selection bar.
-    lead = ("▎" + " " * (PAD - 1), mark, False) if mark else (" " * PAD, None, False)
+    lead = ("▍" + " " * (PAD - 1), mark, False) if mark else (" " * PAD, None, False)
     segs, width = [lead] + segs, max(PAD + 1, width)
     flex = None if flex is None else flex + 1
     over = sum(cols(t) for t, _, _ in segs) - width
@@ -762,12 +787,19 @@ class Tree:
                     colour = STATUS.get(a["agent_status"], STATUS["unknown"])[1]
                     self.flashes[a["pane_id"]] = (now, colour, a["workspace_id"])
         self.status = status
+        collapsed, colors = load("collapsed.json", []), load("colors.json", {})
+        # Forget closed workspaces, so an id herdr hands out again starts unfolded and in
+        # the default colour. An empty list is more likely a hiccup than no workspaces.
+        live = {w["workspace_id"] for w in snap["workspaces"]}
+        if live:
+            if any(w not in live for w in collapsed):
+                collapsed = [w for w in collapsed if w in live]
+                save("collapsed.json", collapsed)
+            if any(w not in live for w in colors):
+                colors = {w: i for w, i in colors.items() if w in live}
+                save("colors.json", colors)
         self.rows = build(
-            snap,
-            set(load("collapsed.json", [])),
-            self.here,
-            load("colors.json", {}),
-            self.settings.workspace_color,
+            snap, set(collapsed), self.here, colors, self.settings.workspace_color
         )
         self.footer = summary(snap)
         keys = [r[0] for r in self.rows]
@@ -1005,7 +1037,7 @@ class Tree:
             (f"Auto-dock: {'on' if auto else 'off'}", flip("auto_dock", not auto)),
             # side only applies to trees docked after the change; open ones stay put.
             (
-                f"Dock: {'right' if right else 'left'} (new trees)",
+                f"Dock new trees: {'right' if right else 'left'}",
                 flip("side", "left" if right else "right"),
             ),
         ]
@@ -1129,17 +1161,24 @@ class Tree:
         if tok in (b"\x1b[I", b"\x1b[O"):
             self.active = tok == b"\x1b[I"
             return
-        if self.edit:
-            return self.edit_key(tok)
         m = KEYS.fullmatch(tok)
+        if self.edit:
+            click = mouse(m)
+            # A click anywhere saves the rename, as Enter does; the click itself is spent.
+            if click and click[0] in (0, 2) and not click[3]:
+                tok = b"\r"
+            return self.edit_key(tok)
         if self.menu:
             return self.menu_key(tok, m)
         if click := mouse(m):
             button, x, y, release = click
             width = self.size[0] if self.size else 0
-            if button == 0 and not release and y == height and x >= width - 1:
+            # The plus and cog are only there when the pane has room for the footer.
+            footer = button == 0 and not release and y == height
+            footer = footer and self.footer_lines(height) > 0
+            if footer and x >= width - 1:
                 self.open_settings()  # the cog, last cells of the footer
-            elif button == 0 and not release and y == height and x >= width - 4:
+            elif footer and x >= width - 4:
                 self.new_workspace()  # the plus, left of the cog
             elif button == 64:
                 self.move(self.cursor - 1)
@@ -1225,7 +1264,7 @@ class Tree:
             if selected and (self.active or menu or self.edit):
                 back = SELECT_BG
             else:
-                back = HERE_BG if here else None
+                back = blend(BASE_BG, segs[0][1], HERE_TINT) if here else None
             if key in lit:
                 start, colour = lit[key]
                 # Hold at peak, then fade out over the remaining FLASH - FLASH_HOLD seconds.

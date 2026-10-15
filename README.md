@@ -30,14 +30,15 @@ doing, which one needs you, and one keypress or click to jump there.
 
 - Status per agent: `●` blocked, `◐` working, `✓` done, `○` idle. A row flashes when its
   agent becomes blocked or done; a collapsed workspace flashes on its agents' behalf.
-- `▎` at the left edge marks the agent in the tab you are looking at, and that workspace's name is
+- `▍` at the left edge marks the agent in the tab you are looking at, and that workspace's name is
   at full colour; other workspaces are dimmed. The selection bar shows only while the tree has
   focus, or while its menu or a rename is open.
-- An agent is named after its tab, or after its session title when the tab has
-  several agents or only a number for a label.
+- An agent is named after its tab, so renaming the tab renames the row. Several agents in
+  one tab add their session titles (`api · fix tests`); a tab with only a number for a
+  label shows the session title alone.
 - A folded workspace counts its blocked, working and done agents on its own row.
 - The footer counts all agents, and how many are blocked, working or done ("all idle"
-  when none are).
+  when every agent is idle).
 
 ## Requirements
 
@@ -118,7 +119,7 @@ is not zoomed. Set `auto_dock = false` to only open trees with the toggle action
 Plugin actions, available from herdr's action menu:
 
 - **Toggle agent tree in this tab**: close the tree here and keep it closed, or bring it back.
-- **Toggle agent tree everywhere**: turn auto-docking off (closing every tree) or back on, including in tabs closed with `q`.
+- **Toggle agent tree everywhere**: flip `auto_dock`, the cog menu's Auto-dock. Off closes every tree; on docks one here and lifts every `q`.
 
 Folded workspaces, colours and per-tab opt-outs are shared by all trees and persist in
 `$HERDR_PLUGIN_STATE_DIR` (`~/.local/state/herdr/plugins/herdr-agent-tree`).
@@ -160,8 +161,8 @@ on the next focus.
 
 **No tree appears in a tab.** A tree only docks itself when the tab's tallest edge pane is
 at least `auto_dock_min_width` (84) columns wide and the tab is not zoomed. It also stays
-away from tabs you closed it in with `q`, and from every tab after **Toggle agent tree
-everywhere** or with `auto_dock = false`. Run **Toggle agent tree in this tab** to dock one
+away from tabs you closed it in with `q`, and from every tab while `auto_dock = false`
+(which **Toggle agent tree everywhere** sets). Run **Toggle agent tree in this tab** to dock one
 by hand. If that fails too, read the hook logs:
 
 ```sh

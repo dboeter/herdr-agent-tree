@@ -27,7 +27,7 @@ command = ["sh", "-c", "exec python3 \"${HERDR_PLUGIN_ROOT:?not launched by herd
 [[actions]]
 id = "toggle-all"
 title = "Toggle agent tree everywhere"
-description = "Turn auto-docking off (closing every tree) or back on."
+description = "Flip auto_dock in config.toml: off closes every tree, on docks one here."
 command = ["sh", "-c", "exec python3 \"${HERDR_PLUGIN_ROOT:?not launched by herdr}/agent_tree.py\" --toggle-all"]
 
 # Dock into the focused tab whenever focus lands somewhere new. tab.created
