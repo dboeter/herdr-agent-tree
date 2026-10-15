@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 """agent-tree: herdr workspaces as groups, their agents as a live tree.
 
+One tree serves the whole session: the hooks move its pane into whichever tab gets
+focus, so its process, cursor, folds and flashes carry over from tab to tab.
+
 Modes:
   --ui          the TUI that runs inside the docked pane
-  --ensure      event hook: dock a tree on the configured edge of the focused tab
+  --ensure      event hook: bring the tree to the configured edge of the focused tab,
+                moving it from another tab or opening it if there is none
                 (--wait blocks on the dock lock instead of skipping when busy)
   --startup     startup hook: close the dead trees a restored session left in every
                 tab, then dock one in the focused tab
@@ -264,7 +268,9 @@ def fit(pane_id):
     call("layout.set_split_ratio", {"pane_id": pane_id, "path": path, "ratio": ratio})
 
 
-def dock(tab, min_width):
+def dock(tab, min_width, tree=None):
+    """Put tree (a pane in another tab) on the configured edge of tab, or open a new
+    tree there when tree is None."""
     # Re-snapshot: a pane list goes stale the moment anything in it closes.
     snap = snapshot()
     anchor = next((p for p in snap["panes"] if p["tab_id"] == tab), None)
@@ -295,21 +301,44 @@ def dock(tab, min_width):
     target = max(edge, key=lambda p: p["rect"]["height"])
     if target["rect"]["width"] < min_width:
         return
-    res = call(
-        "plugin.pane.open",
-        {
-            "plugin_id": PLUGIN_ID,
-            "entrypoint": "tree",
-            "placement": "split",
-            "target_pane_id": target["pane_id"],
-            "direction": "right",
-            "focus": False,
-            "env": {"HERDR_SOCKET_PATH": SOCK, "HERDR_PLUGIN_STATE_DIR": STATE},
-        },
-    )
-    new = res["plugin_pane"]["pane"]["pane_id"]
-    # Stamp while still holding the lock, so a hook queued behind us sees a live tree.
-    stamp(new)
+    new = None
+    if tree:
+        moved = call(
+            "pane.move",
+            {
+                "pane_id": tree["pane_id"],
+                "destination": {
+                    "type": "tab",
+                    "tab_id": tab,
+                    "target_pane_id": target["pane_id"],
+                    "split": "right",
+                },
+                "focus": False,
+            },
+        )["move_result"]
+        if moved["changed"]:
+            new = moved["pane"]["pane_id"]
+        else:
+            # Refused, e.g. while the tree's own tab is zoomed: start over here.
+            call("pane.close", {"pane_id": tree["pane_id"]})
+    if new is None:
+        res = call(
+            "plugin.pane.open",
+            {
+                "plugin_id": PLUGIN_ID,
+                "entrypoint": "tree",
+                "placement": "split",
+                "target_pane_id": target["pane_id"],
+                "direction": "right",
+                "focus": False,
+                "env": {"HERDR_SOCKET_PATH": SOCK, "HERDR_PLUGIN_STATE_DIR": STATE},
+            },
+        )
+        new = res["plugin_pane"]["pane"]["pane_id"]
+        # Stamp while still holding the lock, so a hook queued behind us sees a live tree.
+        stamp(new)
+    # A move to another workspace gives the pane a new id; the tree reads it from here.
+    save("tree.json", {"pane_id": new})
     # herdr only splits right or down, so the tree opens right of its target: already
     # on the right edge, or swapped onto the left one. The swap focuses the tree, so
     # hand focus back.
@@ -324,12 +353,21 @@ def ensure_tab(snap):
     tab = snap.get("focused_tab_id")
     if not tab or tab in load("snoozed.json", []):
         return
-    mine = tree_panes(snap, tab)
-    if any(alive(p) for p in mine):
-        return
-    for p in mine:
-        call("pane.close", {"pane_id": p["pane_id"]})
-    dock(tab, settings().auto_dock_min_width)
+    bring(snap, tab, settings().auto_dock_min_width)
+
+
+def bring(snap, tab, min_width):
+    """Make the session's one live tree dock in tab: keep a live one already there,
+    else move another tab's. Dead trees, and spares left over from when every tab ran
+    its own, are closed."""
+    trees = tree_panes(snap)
+    live = sorted((p for p in trees if alive(p)), key=lambda p: p["tab_id"] != tab)
+    keep = live[0] if live else None
+    for p in trees:
+        if p is not keep:
+            call("pane.close", {"pane_id": p["pane_id"]})
+    if keep is None or keep["tab_id"] != tab:
+        dock(tab, min_width, keep)
 
 
 def ensure(blocking):
@@ -365,7 +403,7 @@ def toggle():
     save("snoozed.json", snoozed)
     if not mine:
         # By hand the tree docks wherever auto-docking would, and never needs more.
-        dock(tab, min(2 * WIDTH, settings().auto_dock_min_width))
+        bring(snapshot(), tab, min(2 * WIDTH, settings().auto_dock_min_width))
 
 
 def toggle_all():
@@ -787,6 +825,17 @@ class Tree:
         snap = snapshot()
         self.settings = settings()
         mine = next((p for p in snap["panes"] if p["pane_id"] == self.me), None)
+        if mine is None:
+            # Moved to another workspace, which renumbers the pane: dock() saved where.
+            moved = load("tree.json", {}).get("pane_id")
+            mine = next((p for p in snap["panes"] if p["pane_id"] == moved), None)
+            if mine and TOKEN in (mine.get("tokens") or {}):
+                self.me = moved
+                stamp(self.me)
+                # Set on the old id at startup; set it again in case it stayed behind.
+                call("pane.input.set", {"pane_id": self.me, "right_click": "pane"})
+            else:
+                mine = None
         self.here = mine["tab_id"] if mine else None
         self.labels = {t["tab_id"]: t["label"] for t in snap["tabs"]}
         status = {a["pane_id"]: a["agent_status"] for a in snap["agents"]}

@@ -35,7 +35,7 @@ command = ["sh", "-c", "exec python3 \"${HERDR_PLUGIN_ROOT:?not launched by herd
 [[startup]]
 command = ["sh", "-c", "exec python3 \"${HERDR_PLUGIN_ROOT:?not launched by herdr}/agent_tree.py\" --startup"]
 
-# Dock into the focused tab whenever focus lands somewhere new. tab.created
+# Move the tree into the focused tab whenever focus lands somewhere new. tab.created
 # waits for the lock so a new tab is never skipped; focus bursts may skip.
 [[events]]
 on = "tab.created"

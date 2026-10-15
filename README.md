@@ -18,7 +18,7 @@
 ## What it is
 
 A [herdr](https://herdr.dev) plugin that docks a narrow pane on the left (or right) edge
-of every tab, showing your workspaces as groups and their agents as a live tree.
+of whichever tab you are in, showing your workspaces as groups and their agents as a live tree.
 
 ## Why
 
@@ -96,9 +96,11 @@ needs a restart; a tree appears in the next tab I switch to.
 
 ## Usage
 
-A tree docks itself into a tab whenever the tab is created or focused, as long as the
-tab's tallest edge pane is at least 84 columns wide (`auto_dock_min_width`) and the tab
-is not zoomed. Set `auto_dock = false` to only open trees with the toggle action.
+One tree serves the whole session. Whenever a tab is created or focused, the tree moves
+into it, as long as the tab's tallest edge pane is at least 84 columns wide
+(`auto_dock_min_width`) and the tab is not zoomed; otherwise it stays in the last tab
+it fit. Moving keeps the tree's cursor, folds and flashes. Set `auto_dock = false` to only
+bring the tree in with the toggle action.
 
 | Key | Action |
 |---|---|
@@ -149,8 +151,10 @@ applies to new trees; to move an open tree, toggle it off and on again.
 ## How it works
 
 `agent_tree.py` is one script with several modes. Herdr runs `--ensure` on tab and
-workspace events; it docks a tree into the focused tab unless a live one is already
-there. Each tree is its own `--ui` process. It subscribes to herdr's event stream,
+workspace events; it moves the live tree into the focused tab with `pane.move` (or opens
+one if none is alive) and closes any spare trees. A move to another workspace gives the
+pane a new id, which `--ensure` writes to `tree.json` in the state directory for the tree
+to pick up. The tree is one `--ui` process. It subscribes to herdr's event stream,
 re-reads the session snapshot at most every 0.4 s on events (and every 3 s regardless),
 and writes a heartbeat to its pane metadata every 8 s, with a 20 s time-to-live. A tree
 in a hidden tab ignores pane updates and re-reads every 10 s instead. A tree whose

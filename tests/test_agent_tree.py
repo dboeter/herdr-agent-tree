@@ -259,6 +259,40 @@ class StartupTest(ConfigDir):
         ensure_tab.assert_called_once()
 
 
+class BringTest(unittest.TestCase):
+    """bring() keeps one live tree, preferring the one already in the tab."""
+
+    def run_bring(self, panes):
+        calls = []
+        with (
+            mock.patch.object(at, "call", lambda m, p=None: calls.append((m, p))),
+            mock.patch.object(at, "dock") as dock,
+        ):
+            at.bring({"panes": panes}, "t1", 0)
+        closed = [p["pane_id"] for m, p in calls if m == "pane.close"]
+        return closed, dock
+
+    def test_moves_the_live_tree_from_another_tab(self):
+        live = {"pane_id": "b", "tab_id": "t2", "tokens": {at.TOKEN: "1"}}
+        closed, dock = self.run_bring(
+            [{"pane_id": "a", "tab_id": "t3", "label": at.TITLE}, live]
+        )
+        self.assertEqual(closed, ["a"])
+        dock.assert_called_once_with("t1", 0, live)
+
+    def test_keeps_the_one_here_and_closes_spares(self):
+        here = {"pane_id": "a", "tab_id": "t1", "tokens": {at.TOKEN: "1"}}
+        spare = {"pane_id": "b", "tab_id": "t2", "tokens": {at.TOKEN: "1"}}
+        closed, dock = self.run_bring([spare, here])
+        self.assertEqual(closed, ["b"])
+        dock.assert_not_called()
+
+    def test_opens_a_tree_when_none_is_alive(self):
+        closed, dock = self.run_bring([])
+        self.assertEqual(closed, [])
+        dock.assert_called_once_with("t1", 0, None)
+
+
 class ConsistencyTest(unittest.TestCase):
     """Facts kept in two files, which comments ask to keep in step."""
 
