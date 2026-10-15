@@ -358,3 +358,13 @@ class ConsistencyTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class NoiseTest(unittest.TestCase):
+    def test_only_heartbeat_updates_are_noise(self):
+        ours = {"pane": {"pane_id": "p", "tokens": {at.TOKEN: "1"}}}
+        self.assertTrue(at.noise({"event": "pane_updated", "data": ours}, True))
+        # The move that brings the tree into view carries its token too.
+        self.assertFalse(at.noise({"event": "pane_moved", "data": ours}, True))
+        self.assertFalse(at.noise({"event": "pane_moved", "data": ours}, False))
+        self.assertTrue(at.noise({"event": "pane_updated", "data": {}}, False))

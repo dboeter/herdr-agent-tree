@@ -755,14 +755,14 @@ def subscribe():
         return None
 
 
-def noise(line, focused):
+def noise(event, focused):
     """Heartbeat stamps from tree and sidebar panes would wake every tree every few
-    seconds; a tree in a hidden tab also ignores agent status and title churn."""
-    try:
-        event = json.loads(line)
-    except ValueError:
+    seconds; a tree in a hidden tab also ignores agent status and title churn. Only
+    pane_updated can be either: other events carry the pane's tokens too, such as the
+    pane_moved that brings the tree into the focused tab, and must not be dropped."""
+    if event.get("event") != "pane_updated":
         return False
-    if not focused and event.get("event") == "pane_updated":
+    if not focused:
         return True
     pane = event.get("data", {}).get("pane") or {}
     tokens = pane.get("tokens") or {}
@@ -840,6 +840,13 @@ class Tree:
         self.motion = False  # whether the terminal reports mouse motion (?1003h)
         self.settings = Settings()  # config.toml at the last refresh
 
+    def adopt(self, pane_id):
+        """Take pane_id as our pane after a move to another workspace renumbered it."""
+        self.me = pane_id
+        stamp(self.me)
+        # Set on the old id at startup; set it again in case it stayed behind.
+        call("pane.input.set", {"pane_id": self.me, "right_click": "pane"})
+
     def refresh(self):
         snap = snapshot()
         self.settings = settings()
@@ -849,10 +856,7 @@ class Tree:
             moved = load("tree.json", {}).get("pane_id")
             mine = next((p for p in snap["panes"] if p["pane_id"] == moved), None)
             if mine and TOKEN in (mine.get("tokens") or {}):
-                self.me = moved
-                stamp(self.me)
-                # Set on the old id at startup; set it again in case it stayed behind.
-                call("pane.input.set", {"pane_id": self.me, "right_click": "pane"})
+                self.adopt(moved)
             else:
                 mine = None
         self.here = mine["tab_id"] if mine else None
@@ -892,8 +896,8 @@ class Tree:
         focused = snap.get("focused_tab_id") == self.here
         self.active = self.me is not None and snap.get("focused_pane_id") == self.me
         if focused and not self.focused:
-            # Every tab runs its own tree with its own cursor, so on arrival the cursor
-            # still sits where this tab's tree was last left. Snap it to the you-are-here row instead.
+            # On arrival in a tab the cursor still sits where it was left in the last
+            # one. Snap it to the you-are-here row instead.
             tab = next((t for t in snap["tabs"] if t["tab_id"] == self.here), {})
             home = [
                 r[0]
@@ -1494,9 +1498,20 @@ class Tree:
                     events, pending = None, b""
                     continue
                 *lines, pending = (pending + chunk).split(b"\n")
-                dirty = dirty or any(
-                    not noise(line, self.focused) for line in lines if line
-                )
+                for line in filter(None, lines):
+                    try:
+                        event = json.loads(line)
+                    except ValueError:
+                        event = {}
+                    data = event.get("data") or {}
+                    try:
+                        # The event names our new id at once; tree.json, written by the
+                        # hook after the move returns, may not be there yet.
+                        if data.get("previous_pane_id") == self.me and self.me:
+                            self.adopt(data["pane"]["pane_id"])
+                    except (KeyError, OSError, RuntimeError):
+                        pass
+                    dirty = dirty or not noise(event, self.focused)
             elif events is None and now - last_subscribe >= POLL:
                 last_subscribe = now
                 events = subscribe()
