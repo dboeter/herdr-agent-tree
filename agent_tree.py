@@ -42,6 +42,9 @@ WIDTH = 42
 HEARTBEAT = 8
 # Seconds a heartbeat token lives; a tree without one has died and is replaced.
 STALE = 20
+# Seconds a focus hook waits before moving the tree, then follows whatever tab has focus
+# by then: flicking through tabs moves the tree once instead of resizing every one.
+SETTLE = 0.3
 # herdr restores a session's plugin panes as plain shells: the manifest pane title
 # survives as the label, the tokens and the tree process do not. Must equal the
 # [[panes]] title in herdr-plugin.toml.
@@ -301,6 +304,11 @@ def dock(tab, min_width, tree=None):
     target = max(edge, key=lambda p: p["rect"]["height"])
     if target["rect"]["width"] < min_width:
         return
+    # The ratio sizes the split's first child: the target on the right, else the tree,
+    # which the swap below then puts first. Moving straight to this size resizes the tab
+    # once; a fresh tree opens at half width and fit() shrinks it.
+    width = target["rect"]["width"]
+    share = WIDTH if on_left else width - WIDTH
     new = None
     if tree:
         moved = call(
@@ -312,6 +320,7 @@ def dock(tab, min_width, tree=None):
                     "tab_id": tab,
                     "target_pane_id": target["pane_id"],
                     "split": "right",
+                    "ratio": min(0.9, max(0.1, share / width)),
                 },
                 "focus": False,
             },
@@ -337,6 +346,7 @@ def dock(tab, min_width, tree=None):
         new = res["plugin_pane"]["pane"]["pane_id"]
         # Stamp while still holding the lock, so a hook queued behind us sees a live tree.
         stamp(new)
+        tree = None
     # A move to another workspace gives the pane a new id; the tree reads it from here.
     save("tree.json", {"pane_id": new})
     # herdr only splits right or down, so the tree opens right of its target: already
@@ -346,7 +356,8 @@ def dock(tab, min_width, tree=None):
         call("pane.swap", {"source_pane_id": new, "target_pane_id": target["pane_id"]})
         if lay.get("focused_pane_id"):
             call("pane.focus", {"pane_id": lay["focused_pane_id"]})
-    fit(new)
+    if tree is None:
+        fit(new)
 
 
 def ensure_tab(snap):
@@ -373,7 +384,15 @@ def bring(snap, tab, min_width):
 def ensure(blocking):
     if not settings().auto_dock or not lock(blocking):
         return
-    ensure_tab(snapshot())
+    # Hooks for focus changes during the wait find the lock taken and skip, so follow
+    # focus until it holds still across a whole move.
+    time.sleep(SETTLE)
+    snap = snapshot()
+    for _ in range(3):
+        ensure_tab(snap)
+        tab, snap = snap.get("focused_tab_id"), snapshot()
+        if snap.get("focused_tab_id") == tab:
+            break
 
 
 def startup():

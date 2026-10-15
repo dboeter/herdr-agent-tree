@@ -293,6 +293,41 @@ class BringTest(unittest.TestCase):
         dock.assert_called_once_with("t1", 0, None)
 
 
+class DockTest(ConfigDir):
+    def test_a_move_lands_at_the_final_width(self):
+        lay = {
+            "zoomed": False,
+            "area": {"x": 0, "y": 0, "width": 200, "height": 50},
+            "focused_pane_id": "p1",
+            "panes": [
+                {"pane_id": "p1", "rect": {"x": 0, "y": 0, "width": 200, "height": 50}}
+            ],
+        }
+        calls = []
+
+        def call(method, params=None):
+            calls.append((method, params))
+            if method == "pane.layout":
+                return {"layout": lay}
+            if method == "pane.move":
+                return {"move_result": {"changed": True, "pane": {"pane_id": "w2:p9"}}}
+            return {}
+
+        self.write('side = "right"\n')
+        snap = {"panes": [{"pane_id": "p1", "tab_id": "t1"}]}
+        with (
+            mock.patch.object(at, "call", call),
+            mock.patch.object(at, "snapshot", return_value=snap),
+            mock.patch.object(at, "save") as save,
+        ):
+            at.dock("t1", 0, {"pane_id": "w1:p9"})
+        move = next(p for m, p in calls if m == "pane.move")
+        self.assertAlmostEqual(move["destination"]["ratio"], (200 - at.WIDTH) / 200)
+        # No fit(): the move already sized it, so the layout is read only once.
+        self.assertEqual([m for m, _ in calls].count("pane.layout"), 1)
+        save.assert_called_once_with("tree.json", {"pane_id": "w2:p9"})
+
+
 class ConsistencyTest(unittest.TestCase):
     """Facts kept in two files, which comments ask to keep in step."""
 
