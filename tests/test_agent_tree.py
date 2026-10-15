@@ -9,6 +9,7 @@ import sys
 import tempfile
 import tomllib
 import unittest
+from unittest import mock
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
@@ -235,6 +236,27 @@ class TextTest(unittest.TestCase):
         for width in (20, 30, at.WIDTH, 80):
             for segs in at.hint_lines(width):
                 self.assertLessEqual(at.cols(text(segs)), width - at.PAD)
+
+
+class StartupTest(ConfigDir):
+    def test_closes_dead_trees_everywhere_then_docks(self):
+        snap = {
+            "panes": [
+                {"pane_id": "a", "tab_id": "t1", "label": at.TITLE},  # restored shell
+                {"pane_id": "b", "tab_id": "t2", "tokens": {at.TOKEN: "1"}},  # live
+                {"pane_id": "c", "tab_id": "t2", "label": "zsh"},  # not ours
+            ]
+        }
+        calls = []
+        with (
+            mock.patch.object(at, "lock", return_value=True),
+            mock.patch.object(at, "snapshot", return_value=snap),
+            mock.patch.object(at, "call", lambda m, p=None: calls.append((m, p))),
+            mock.patch.object(at, "ensure_tab") as ensure_tab,
+        ):
+            at.startup()
+        self.assertEqual(calls, [("pane.close", {"pane_id": "a"})])
+        ensure_tab.assert_called_once()
 
 
 class ConsistencyTest(unittest.TestCase):

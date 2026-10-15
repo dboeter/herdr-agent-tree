@@ -5,6 +5,8 @@ Modes:
   --ui          the TUI that runs inside the docked pane
   --ensure      event hook: dock a tree on the configured edge of the focused tab
                 (--wait blocks on the dock lock instead of skipping when busy)
+  --startup     startup hook: close the dead trees a restored session left in every
+                tab, then dock one in the focused tab
   --toggle      action: close the tree in this tab and keep it closed, or bring it back
   --toggle-all  action: switch auto-docking off everywhere (closing every tree) or on
 
@@ -27,12 +29,14 @@ import tty
 import unicodedata
 
 PLUGIN_ID = "herdr-agent-tree"
-TOKEN = "herdr-agent-tree"  # pane metadata token marking our panes; value = unix-time heartbeat
+# Pane metadata token marking our panes; value = unix-time heartbeat. It is reported
+# with a TTL of STALE, so herdr drops it from a tree whose process stopped stamping.
+TOKEN = "herdr-agent-tree"
 # Columns the docked pane aims for. herdr's pane width includes its border, so the
 # text area is 2 columns narrower than this.
 WIDTH = 42
 HEARTBEAT = 8
-# A token older than this marks a tree whose process died, to be replaced.
+# Seconds a heartbeat token lives; a tree without one has died and is replaced.
 STALE = 20
 # herdr restores a session's plugin panes as plain shells: the manifest pane title
 # survives as the label, the tokens and the tree process do not. Must equal the
@@ -163,7 +167,12 @@ def snapshot():
 def stamp(pane_id):
     call(
         "pane.report_metadata",
-        {"pane_id": pane_id, "source": TOKEN, "tokens": {TOKEN: str(int(time.time()))}},
+        {
+            "pane_id": pane_id,
+            "source": TOKEN,
+            "tokens": {TOKEN: str(int(time.time()))},
+            "ttl_ms": STALE * 1000,
+        },
     )
 
 
@@ -212,10 +221,8 @@ def tree_panes(snap, tab=None):
 
 
 def alive(pane):
-    try:
-        return time.time() - float((pane.get("tokens") or {})[TOKEN]) < STALE
-    except (KeyError, TypeError, ValueError):
-        return False
+    # Dead trees keep their "Agent Tree" label, which is how tree_panes still finds them.
+    return TOKEN in (pane.get("tokens") or {})
 
 
 def inside(outer, inner):
@@ -329,6 +336,17 @@ def ensure(blocking):
     if not settings().auto_dock or not lock(blocking):
         return
     ensure_tab(snapshot())
+
+
+def startup():
+    """A restored session brings every tree back as a plain shell; clear them all at
+    once instead of one by one as each tab is focused."""
+    lock(True)
+    for p in tree_panes(snapshot()):
+        if not alive(p):
+            call("pane.close", {"pane_id": p["pane_id"]})
+    if settings().auto_dock:
+        ensure_tab(snapshot())
 
 
 def toggle():
@@ -1401,7 +1419,9 @@ class Tree:
                     chunk = events.recv(1 << 16)
                 except OSError:  # e.g. connection reset: same as the server going away
                     chunk = b""
-                if not chunk:  # server went away; keep polling and resubscribe later
+                # The server went away, or closed the stream after an events_lost
+                # error (whose line already set dirty): poll and resubscribe later.
+                if not chunk:
                     events.close()
                     events, pending = None, b""
                     continue
@@ -1420,6 +1440,8 @@ def main():
         Tree().run()
     elif mode == "--ensure":
         ensure(blocking="--wait" in sys.argv)
+    elif mode == "--startup":
+        startup()
     elif mode == "--toggle":
         toggle()
     elif mode == "--toggle-all":

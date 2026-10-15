@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- A startup hook closes the dead trees a restored session leaves in every tab and docks
+  one in the focused tab, instead of each tab showing a plain shell until it is focused.
+- The heartbeat token is reported with a 20 s time-to-live, so herdr drops it when a tree
+  dies and liveness is just "token present".
 - Fix: a tree docked beside a pane nested in two same-direction splits got the wrong width,
   because the split path compared the tree's split with every ancestor instead of its parent.
 - An agent row shows its tab label whenever the tab has a real one (with the session title

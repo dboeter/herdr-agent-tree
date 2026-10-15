@@ -152,10 +152,11 @@ applies to new trees; to move an open tree, toggle it off and on again.
 workspace events; it docks a tree into the focused tab unless a live one is already
 there. Each tree is its own `--ui` process. It subscribes to herdr's event stream,
 re-reads the session snapshot at most every 0.4 s on events (and every 3 s regardless),
-and writes a heartbeat to its pane metadata every 8 s. A tree in a hidden tab ignores
-pane updates and re-reads every 10 s instead. A tree whose heartbeat is older
-than 20 s, such as one restored from a saved session without its process, is replaced
-on the next focus.
+and writes a heartbeat to its pane metadata every 8 s, with a 20 s time-to-live. A tree
+in a hidden tab ignores pane updates and re-reads every 10 s instead. A tree whose
+heartbeat has expired is replaced on the next focus. A restored session brings trees
+back without their processes; herdr runs `--startup` once the session is up, which
+closes those in every tab and docks a fresh tree in the focused one.
 
 ## Troubleshooting
 
@@ -175,8 +176,8 @@ A `ModuleNotFoundError: No module named 'tomllib'` there means `python3` is olde
 [Nerd Font](https://www.nerdfonts.com). Install one and select it in your terminal.
 
 **A pane titled "Agent Tree" shows a plain shell.** herdr restored a saved session, which
-brings back the pane but not its process. The plugin replaces it the next time you focus
-that tab.
+brings back the pane but not its process. The startup hook closes these when herdr starts;
+one that slips through is replaced the next time you focus that tab.
 
 **Colours look off on a light theme.** The palette and the flash fade are tuned for a dark
 terminal background.

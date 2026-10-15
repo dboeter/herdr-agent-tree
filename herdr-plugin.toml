@@ -30,6 +30,11 @@ title = "Toggle agent tree everywhere"
 description = "Flip auto_dock in config.toml: off closes every tree, on docks one here."
 command = ["sh", "-c", "exec python3 \"${HERDR_PLUGIN_ROOT:?not launched by herdr}/agent_tree.py\" --toggle-all"]
 
+# A restored session brings trees back as plain shells in every tab: close them all
+# and dock into the focused tab, rather than one tab at a time as each is focused.
+[[startup]]
+command = ["sh", "-c", "exec python3 \"${HERDR_PLUGIN_ROOT:?not launched by herdr}/agent_tree.py\" --startup"]
+
 # Dock into the focused tab whenever focus lands somewhere new. tab.created
 # waits for the lock so a new tab is never skipped; focus bursts may skip.
 [[events]]
