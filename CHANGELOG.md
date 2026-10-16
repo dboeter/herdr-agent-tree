@@ -5,7 +5,7 @@
 - One tree for the whole session: focusing a tab moves the tree into it instead of
   starting a tree process per tab, so its cursor, folds and flashes carry over. Trees
   from earlier versions are closed as tabs are focused. The tree moves in at its final
-  width, and only once focus has rested on a tab for 0.3 s. It leaves a blank slot pane
+  width, and only once focus has rested on a tab for 0.1 s. It leaves a blank slot pane
   behind that it fills on the way back, so the panes beside it resize only on a tab's
   first visit.
 - A startup hook closes the dead trees a restored session leaves in every tab and docks

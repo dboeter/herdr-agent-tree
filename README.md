@@ -151,7 +151,7 @@ applies to new trees; to move an open tree, toggle it off and on again.
 ## How it works
 
 `agent_tree.py` is one script with several modes. Herdr runs `--ensure` on tab and
-workspace events; after 0.3 s it moves the live tree into whichever tab has focus by
+workspace events; after 0.1 s it moves the live tree into whichever tab has focus by
 then, with `pane.move` at its final width so the tab resizes once (or opens a tree if none
 is alive), and closes any spare trees. Flicking through tabs moves the tree once. The
 tree leaves a blank "Agent Tree slot" pane in the tab it leaves, a sleeping `sh` that holds

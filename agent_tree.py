@@ -44,7 +44,7 @@ HEARTBEAT = 8
 STALE = 20
 # Seconds a focus hook waits before moving the tree, then follows whatever tab has focus
 # by then: flicking through tabs moves the tree once instead of resizing every one.
-SETTLE = 0.3
+SETTLE = 0.1
 # herdr restores a session's plugin panes as plain shells: the manifest pane title
 # survives as the label, the tokens and the tree process do not. Must equal the
 # [[panes]] title in herdr-plugin.toml.
