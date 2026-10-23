@@ -327,14 +327,11 @@ def dock(tab, min_width):
     new = pane["pane_id"]
     # Stamp while still holding the lock, so a hook queued behind us sees a live tree.
     stamp(new)
-    # No label, no title on the border. Closed trees drop out of the record here.
+    # No label, no title on the border. Closed trees drop out of the record here; dead
+    # ones stay, as a hook can dock before startup() has closed a restored session's.
     call("pane.rename", {"pane_id": new, "label": None})
-    docked = load("trees.json", {})
-    docked = {
-        k: v
-        for k, v in docked.items()
-        if any(p["pane_id"] == k and alive(p) for p in snap["panes"])
-    }
+    present = {p["pane_id"] for p in snap["panes"]}
+    docked = {k: v for k, v in load("trees.json", {}).items() if k in present}
     docked[new] = pane.get("cwd")
     save("trees.json", docked)
     # herdr only splits right or down, so the tree opens right of its target: already
@@ -868,9 +865,15 @@ class Tree:
             # Every tab runs its own tree with its own cursor, so on arrival the cursor
             # still sits where this tab's tree was last left. Snap it to the you-are-here row instead.
             tab = next((t for t in snap["tabs"] if t["tab_id"] == self.here), {})
-            home = [
-                r[0] for r in self.rows if r[1] != "ws" and r[2]["tab_id"] == self.here
-            ]
+            # An agent before a plain pane: it is what the tab is for.
+            home = sorted(
+                (
+                    r[0]
+                    for r in self.rows
+                    if r[1] != "ws" and r[2]["tab_id"] == self.here
+                ),
+                key=lambda k: k[0] != "agent",
+            )
             self.key = home[0] if home else ("ws", tab.get("workspace_id"))
         self.focused = focused
         if self.key in keys:

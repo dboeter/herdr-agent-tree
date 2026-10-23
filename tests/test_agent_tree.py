@@ -305,6 +305,46 @@ class StartupTest(ConfigDir):
         self.assertEqual([p["pane_id"] for p in at.tree_panes(snap)], ["a"])
 
 
+class DockTest(ConfigDir):
+    def test_records_the_new_tree_and_keeps_dead_ones_still_present(self):
+        at.save("trees.json", {"dead": "/plugin", "gone": "/plugin"})
+        snap = {
+            "panes": [
+                {"pane_id": "work", "tab_id": "t1"},
+                {"pane_id": "dead", "tab_id": "t2", "cwd": "/plugin"},
+            ]
+        }
+        rect = {"x": 0, "y": 0, "width": 200, "height": 50}
+        layout = {
+            "zoomed": False,
+            "area": rect,
+            "panes": [{"pane_id": "work", "rect": rect}],
+            "splits": [],
+        }
+        replies = {
+            "pane.layout": {"layout": layout},
+            "plugin.pane.open": {
+                "plugin_pane": {"pane": {"pane_id": "new", "cwd": "/plugin"}}
+            },
+        }
+        calls = []
+
+        def call(method, params=None):
+            calls.append((method, params))
+            return replies.get(method, {})
+
+        with (
+            mock.patch.object(at, "snapshot", return_value=snap),
+            mock.patch.object(at, "call", call),
+            mock.patch.object(at, "fit"),
+        ):
+            at.dock("t1", 0)
+        self.assertIn(("pane.rename", {"pane_id": "new", "label": None}), calls)
+        self.assertEqual(
+            at.load("trees.json", None), {"dead": "/plugin", "new": "/plugin"}
+        )
+
+
 class ConsistencyTest(unittest.TestCase):
     """Facts kept in two files, which comments ask to keep in step."""
 
