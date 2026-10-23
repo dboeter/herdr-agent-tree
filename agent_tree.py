@@ -38,9 +38,11 @@ WIDTH = 42
 HEARTBEAT = 8
 # Seconds a heartbeat token lives; a tree without one has died and is replaced.
 STALE = 20
-# herdr restores a session's plugin panes as plain shells: the manifest pane title
-# survives as the label, the tokens and the tree process do not. Must equal the
-# [[panes]] title in herdr-plugin.toml.
+# herdr restores a session's plugin panes as plain shells: the pane id and label
+# survive, the tokens and the tree process do not. dock() clears the label, which herdr
+# draws as a title on the pane border, and records the id in trees.json instead; the
+# title still finds trees from sessions saved before that. Must equal the [[panes]]
+# title in herdr-plugin.toml.
 TITLE = "Agent Tree"
 SCRIPT = os.path.abspath(__file__)
 SOCK = os.environ.get("HERDR_SOCKET_PATH") or os.path.expanduser(
@@ -212,17 +214,31 @@ def lock(blocking):
 
 
 def tree_panes(snap, tab=None):
+    # trees.json maps pane id -> cwd; a restored shell keeps both, while a pane that
+    # took over a closed tree's id would need the same cwd as well to be mistaken for it.
+    docked = load("trees.json", {})
     return [
         p
         for p in snap["panes"]
-        if (TOKEN in (p.get("tokens") or {}) or p.get("label") == TITLE)
+        if (
+            TOKEN in (p.get("tokens") or {})
+            or p.get("label") == TITLE
+            or (p["pane_id"] in docked and docked[p["pane_id"]] == p.get("cwd"))
+        )
         and (tab is None or p["tab_id"] == tab)
     ]
 
 
 def alive(pane):
-    # Dead trees keep their "Agent Tree" label, which is how tree_panes still finds them.
+    # Dead trees keep their pane id or label, which is how tree_panes still finds them.
     return TOKEN in (pane.get("tokens") or {})
+
+
+def chrome(pane):
+    """Tree and sidebar panes: plugin panes that show the session rather than work in it."""
+    return any(
+        k == TOKEN or k.startswith("herdr-sidebar") for k in pane.get("tokens") or {}
+    )
 
 
 def inside(outer, inner):
@@ -307,9 +323,20 @@ def dock(tab, min_width):
             "env": {"HERDR_SOCKET_PATH": SOCK, "HERDR_PLUGIN_STATE_DIR": STATE},
         },
     )
-    new = res["plugin_pane"]["pane"]["pane_id"]
+    pane = res["plugin_pane"]["pane"]
+    new = pane["pane_id"]
     # Stamp while still holding the lock, so a hook queued behind us sees a live tree.
     stamp(new)
+    # No label, no title on the border. Closed trees drop out of the record here.
+    call("pane.rename", {"pane_id": new, "label": None})
+    docked = load("trees.json", {})
+    docked = {
+        k: v
+        for k, v in docked.items()
+        if any(p["pane_id"] == k and alive(p) for p in snap["panes"])
+    }
+    docked[new] = pane.get("cwd")
+    save("trees.json", docked)
     # herdr only splits right or down, so the tree opens right of its target: already
     # on the right edge, or swapped onto the left one. The swap focuses the tree, so
     # hand focus back.
@@ -393,6 +420,7 @@ STATUS = {  # agent_status -> glyph, colour
     "unknown": ("·", (110, 110, 120)),
 }
 DIM = (110, 110, 120)
+SHELL = "\uf120"  # fa-terminal: a pane with no agent in it
 GROUP = (125, 207, 255)
 # Workspace colours, cycled with c/C or the right-click menu; index 0 is the default.
 # config.example.toml lists the same colours in hex; keep the two in step.
@@ -471,23 +499,30 @@ def palette(default=None):
 
 
 def build(snap, collapsed, here, colors, default=None):
-    """Rows as (key, kind, payload, segments, flex); segments are (text, colour, bold)."""
+    """Rows as (key, kind, payload, segments, flex); segments are (text, colour, bold).
+    kind is "ws", "agent", or "pane" for a pane with no agent in it."""
     tabs = {t["tab_id"]: t for t in snap["tabs"]}
+    agent_panes = {a["pane_id"] for a in snap["agents"]}
+    # Every pane but the trees and sidebars, as its agent when it has one.
+    items = snap["agents"] + [
+        p for p in snap["panes"] if p["pane_id"] not in agent_panes and not chrome(p)
+    ]
     per_tab = {}
-    for a in snap["agents"]:
+    for a in items:
         per_tab[a["tab_id"]] = per_tab.get(a["tab_id"], 0) + 1
     # Pane ids are opaque counters; the snapshot lists a tab's panes in layout order.
     order = {p["pane_id"]: i for i, p in enumerate(snap["panes"])}
     rows = []
     for w in sorted(snap["workspaces"], key=lambda w: w["number"]):
         wid = w["workspace_id"]
-        agents = sorted(
-            (a for a in snap["agents"] if a["workspace_id"] == wid),
+        members = sorted(
+            (a for a in items if a["workspace_id"] == wid),
             key=lambda a: (
                 tabs.get(a["tab_id"], {}).get("number", 0),
                 order.get(a["pane_id"], 0),
             ),
         )
+        agents = [a for a in members if a["pane_id"] in agent_panes]
         open_ = wid not in collapsed
         ws_colour = palette(default)[colors.get(wid, 0) % len(PALETTE)]
         # The workspace you are looking at is at full colour; the others are dimmed,
@@ -508,28 +543,36 @@ def build(snap, collapsed, here, colors, default=None):
             # Counts stand in for the hidden agent rows, so only a folded workspace shows them.
             segs += status_counts(agents, " ")
             continue
-        for i, a in enumerate(agents):
+        for i, a in enumerate(members):
+            kind = "agent" if a["pane_id"] in agent_panes else "pane"
             tab_label = tabs.get(a["tab_id"], {}).get("label") or ""
-            title = a.get("terminal_title_stripped") or ""
-            # A tab label names the agent, so a rename (r renames the tab) always shows;
-            # several agents in one tab add their session titles to tell them apart.
-            # A tab with only a number for a label leaves the session title alone.
+            if kind == "agent":
+                title = a.get("terminal_title_stripped") or ""
+                glyph, colour = STATUS.get(a["agent_status"], STATUS["unknown"])
+            else:
+                # A plain pane has no session title: its own label stands in, else
+                # its directory.
+                cwd = a.get("foreground_cwd") or a.get("cwd") or ""
+                title = a.get("label") or os.path.basename(cwd.rstrip("/")) or cwd
+                glyph, colour = SHELL, DIM
+            # A tab label names the pane, so a rename (r renames the tab) always shows;
+            # several panes in one tab add their titles to tell them apart.
+            # A tab with only a number for a label leaves the title alone.
             if not tab_label or tab_label.isdigit():
                 label = title or tab_label or a["pane_id"]
             elif per_tab[a["tab_id"]] > 1 and title:
                 label = f"{tab_label} · {title}"
             else:
                 label = tab_label
-            glyph, colour = STATUS.get(a["agent_status"], STATUS["unknown"])
             segs = [
                 # Blank; its colour is the workspace's, which the draw uses for the
                 # you-are-here mark it puts in the pad column (see paint's mark).
                 ("  ", ws_colour, False),
-                ("└ " if i == len(agents) - 1 else "├ ", DIM, False),
+                ("└ " if i == len(members) - 1 else "├ ", DIM, False),
                 (f"{glyph} ", colour, False),
                 (label, None, False),
             ]
-            rows.append((("agent", a["pane_id"]), "agent", a, segs, 3))
+            rows.append(((kind, a["pane_id"]), kind, a, segs, 3))
     return rows
 
 
@@ -707,9 +750,7 @@ def noise(line, focused):
         return False
     if not focused and event.get("event") == "pane_updated":
         return True
-    pane = event.get("data", {}).get("pane") or {}
-    tokens = pane.get("tokens") or {}
-    return any(k == TOKEN or k.startswith("herdr-sidebar") for k in tokens)
+    return chrome(event.get("data", {}).get("pane") or {})
 
 
 @dataclasses.dataclass
@@ -828,9 +869,7 @@ class Tree:
             # still sits where this tab's tree was last left. Snap it to the you-are-here row instead.
             tab = next((t for t in snap["tabs"] if t["tab_id"] == self.here), {})
             home = [
-                r[0]
-                for r in self.rows
-                if r[1] == "agent" and r[2]["tab_id"] == self.here
+                r[0] for r in self.rows if r[1] != "ws" and r[2]["tab_id"] == self.here
             ]
             self.key = home[0] if home else ("ws", tab.get("workspace_id"))
         self.focused = focused
@@ -838,10 +877,14 @@ class Tree:
             self.cursor = keys.index(self.key)
         self.cursor = max(0, min(self.cursor, len(self.rows) - 1))
         # herdr drops an agent for a few seconds while it restarts, though its pane
-        # stays. Keep the key meanwhile rather than adopt the row that slid into its
-        # place, so the cursor goes back to the agent when it reappears.
+        # stays, showing as a pane row meanwhile. Follow the pane between its two rows
+        # rather than adopt the row that slid into its place.
         panes = {p["pane_id"] for p in snap["panes"]}
-        if not (self.key and self.key[0] == "agent" and self.key[1] in panes):
+        if self.key and self.key[0] != "ws" and self.key[1] in panes:
+            twin = ("pane" if self.key[0] == "agent" else "agent", self.key[1])
+            if twin in keys:
+                self.key, self.cursor = twin, keys.index(twin)
+        else:
             self.key = keys[self.cursor] if keys else None
         # draw() shows a rename on the selected row, so drop it once that row no longer
         # belongs to what is being renamed (it, or its agent, went away).
@@ -869,10 +912,12 @@ class Tree:
         if kind == "ws":
             wid = item["workspace_id"]
             self.set_collapsed(wid, wid not in set(load("collapsed.json", [])))
-        else:
+        elif kind == "agent":
             # agent.focus, unlike pane.focus, also marks a finished agent as seen,
             # which is what a deliberate jump to it means.
             call("agent.focus", {"target": item["pane_id"]})
+        else:
+            call("pane.focus", {"pane_id": item["pane_id"]})
 
     def left(self):
         if not self.rows:
@@ -1275,7 +1320,7 @@ class Tree:
             self.rows[self.top : self.top + body]
         ):
             selected = self.top + i == self.cursor
-            here = kind == "agent" and item["tab_id"] == self.here
+            here = kind != "ws" and item["tab_id"] == self.here
             # The bar is the keyboard cursor: only shown while keys reach this tree.
             # The you-are-here row gets a fainter one of its own.
             menu = self.menu and not self.menu.settings

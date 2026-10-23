@@ -14,7 +14,9 @@ platforms = ["linux"]
 
 [[panes]]
 id = "tree"
-title = "Agent Tree"  # agent_tree.py's TITLE matches this to find trees restored without tokens
+# The tree clears this label once docked; agent_tree.py's TITLE matches it to find dead
+# trees in sessions saved before that.
+title = "Agent Tree"
 placement = "split"
 command = ["sh", "-c", "exec python3 \"${HERDR_PLUGIN_ROOT:?not launched by herdr}/agent_tree.py\" --ui"]
 

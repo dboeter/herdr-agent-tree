@@ -36,6 +36,9 @@ doing, which one needs you, and one keypress or click to jump there.
 - An agent is named after its tab, so renaming the tab renames the row. Several agents in
   one tab add their session titles (`api · fix tests`); a tab with only a number for a
   label shows the session title alone.
+- Panes without an agent are listed too, with a terminal icon, named after their tab
+  (plus their own label or directory when the tab holds several panes). Selecting one
+  focuses it. Counts and the footer cover agents only.
 - A folded workspace counts its blocked, working and done agents on its own row.
 - The footer counts all agents, and how many are blocked, working or done ("all idle"
   when every agent is idle).
@@ -175,7 +178,7 @@ A `ModuleNotFoundError: No module named 'tomllib'` there means `python3` is olde
 **Boxes instead of the carets, plus and cog.** The terminal font is not a
 [Nerd Font](https://www.nerdfonts.com). Install one and select it in your terminal.
 
-**A pane titled "Agent Tree" shows a plain shell.** herdr restored a saved session, which
+**A narrow pane shows a plain shell where a tree was.** herdr restored a saved session, which
 brings back the pane but not its process. The startup hook closes these when herdr starts;
 one that slips through is replaced the next time you focus that tab.
 

@@ -22,11 +22,11 @@ class ConfigDir(unittest.TestCase):
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        self.saved = at.CONFIG
-        at.CONFIG = self.tmp.name
+        self.saved = at.CONFIG, at.STATE
+        at.CONFIG = at.STATE = self.tmp.name
 
     def tearDown(self):
-        at.CONFIG = self.saved
+        at.CONFIG, at.STATE = self.saved
         self.tmp.cleanup()
 
     def write(self, text):
@@ -159,6 +159,42 @@ class BuildTest(unittest.TestCase):
         self.assertTrue(text(rows[1][3]).endswith("api"))
         self.assertTrue(text(rows[2][3]).endswith("api · fix tests"))
 
+    def test_plain_panes_get_rows_beside_agents(self):
+        s = snap()
+        s["panes"] += [
+            {
+                "pane_id": "p4",
+                "tab_id": "t1",
+                "workspace_id": "w1",
+                "cwd": "/home/me/notes",
+            },
+            {
+                "pane_id": "p5",
+                "tab_id": "t2",
+                "workspace_id": "w2",
+                "cwd": "/srv",
+                "label": "logs",
+            },
+            {  # a tree: not a row
+                "pane_id": "p6",
+                "tab_id": "t1",
+                "workspace_id": "w1",
+                "tokens": {at.TOKEN: "1"},
+            },
+        ]
+        rows = at.build(s, {"w2"}, "t1", {})
+        self.assertEqual(
+            [r[0] for r in rows],
+            [("ws", "w1"), ("agent", "p1"), ("pane", "p4"), ("ws", "w2")],
+        )
+        # The tab label names both panes in it; the directory tells them apart.
+        self.assertTrue(text(rows[2][3]).endswith(f"{at.SHELL} api · notes"))
+        # A folded workspace counts agents only.
+        self.assertTrue(text(rows[3][3]).endswith("● 1"))
+        rows = at.build(s, set(), "t1", {})
+        # A numbered tab leaves the pane's own label.
+        self.assertTrue(text(rows[-1][3]).endswith("logs"))
+
 
 class PaletteTest(unittest.TestCase):
     def test_default_from_the_palette_trades_places_with_sky(self):
@@ -257,6 +293,16 @@ class StartupTest(ConfigDir):
             at.startup()
         self.assertEqual(calls, [("pane.close", {"pane_id": "a"})])
         ensure_tab.assert_called_once()
+
+    def test_finds_restored_trees_by_recorded_id_and_cwd(self):
+        at.save("trees.json", {"a": "/plugin", "c": "/plugin"})
+        snap = {
+            "panes": [
+                {"pane_id": "a", "tab_id": "t1", "cwd": "/plugin"},  # restored shell
+                {"pane_id": "c", "tab_id": "t2", "cwd": "/home/me"},  # id reused
+            ]
+        }
+        self.assertEqual([p["pane_id"] for p in at.tree_panes(snap)], ["a"])
 
 
 class ConsistencyTest(unittest.TestCase):
