@@ -243,6 +243,14 @@ def chrome(pane):
     )
 
 
+def alone(snap, pane_id):
+    """Whether pane_id is the only pane left in its tab; False when it is not listed."""
+    mine = next((p for p in snap["panes"] if p["pane_id"] == pane_id), None)
+    return mine is not None and not any(
+        p["tab_id"] == mine["tab_id"] and p["pane_id"] != pane_id for p in snap["panes"]
+    )
+
+
 def inside(outer, inner):
     return (
         outer["x"] <= inner["x"]
@@ -828,6 +836,11 @@ class Tree:
 
     def refresh(self):
         snap = snapshot()
+        if self.me and alone(snap, self.me):
+            # Every other pane in the tab closed. herdr closes a tab with its last pane,
+            # so this takes the tab with it; not close(), which would snooze the tab.
+            call("pane.close", {"pane_id": self.me})
+            raise SystemExit
         self.settings = settings()
         mine = next((p for p in snap["panes"] if p["pane_id"] == self.me), None)
         self.here = mine["tab_id"] if mine else None

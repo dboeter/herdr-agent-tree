@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- A tree left as the only pane in its tab closes itself, so closing a tab's last work pane
+  closes the tab (and its workspace, when that was the last tab) instead of leaving the tree.
+
 ## 0.3.0 — 2026-10-24
 
 - `panes = false` (Other panes in the cog menu) hides the rows for panes without an

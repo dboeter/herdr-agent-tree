@@ -241,6 +241,21 @@ class SplitPathTest(unittest.TestCase):
         self.assertEqual(at.split_path([holder], holder), [])
 
 
+class AloneTest(unittest.TestCase):
+    def panes(self, *ids):
+        return {"panes": [{"pane_id": p, "tab_id": t} for p, t in ids]}
+
+    def test_only_pane_in_its_tab(self):
+        self.assertTrue(at.alone(self.panes(("tree", "t1")), "tree"))
+        self.assertTrue(at.alone(self.panes(("tree", "t1"), ("p", "t2")), "tree"))
+
+    def test_another_pane_in_the_tab(self):
+        self.assertFalse(at.alone(self.panes(("tree", "t1"), ("p", "t1")), "tree"))
+
+    def test_not_listed(self):
+        self.assertFalse(at.alone(self.panes(("p", "t1")), "tree"))
+
+
 class SummaryTest(unittest.TestCase):
     def test_counts(self):
         self.assertEqual(text(at.summary(snap())), "2 agents  ● 1  ◐ 1")

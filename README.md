@@ -41,6 +41,8 @@ doing, which one needs you, and one keypress or click to jump there.
   focuses it. Counts and the footer cover agents only. `panes = false` (or Other panes
   in the cog menu) lists agents only.
 - A folded workspace counts its blocked, working and done agents on its own row.
+- A tree left as the only pane in its tab closes itself, and herdr closes the tab with it
+  (and the workspace, when that was its last tab).
 - The footer counts all agents, and how many are blocked, working or done ("all idle"
   when every agent is idle).
 
