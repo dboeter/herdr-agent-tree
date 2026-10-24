@@ -256,6 +256,40 @@ class AloneTest(unittest.TestCase):
         self.assertFalse(at.alone(self.panes(("p", "t1")), "tree"))
 
 
+class AutoCloseTest(ConfigDir):
+    def refresh(self, tree, panes, close):
+        lone = snap(panes=panes, agents=[])
+        with (
+            mock.patch.object(at, "snapshot", return_value=lone),
+            mock.patch.object(at, "call", close),
+        ):
+            tree.refresh()
+
+    def test_a_refused_close_is_asked_once_until_the_tab_has_company(self):
+        closes = []
+
+        def refuse(method, params=None):
+            closes.append(params["pane_id"])
+            raise RuntimeError("pane.close: last pane")
+
+        tree_pane = {
+            "pane_id": "tree",
+            "tab_id": "t1",
+            "workspace_id": "w1",
+            "tokens": {at.TOKEN: "1"},
+        }
+        other = {"pane_id": "p1", "tab_id": "t1", "workspace_id": "w1"}
+        with mock.patch.dict(os.environ, {"HERDR_PANE_ID": "tree"}):
+            tree = at.Tree()
+        self.refresh(tree, [tree_pane], refuse)
+        self.refresh(tree, [tree_pane], refuse)
+        self.assertEqual(closes, ["tree"])
+        self.assertTrue(tree.rows)  # still drawing after the refusal
+        self.refresh(tree, [tree_pane, other], refuse)
+        self.refresh(tree, [tree_pane], refuse)
+        self.assertEqual(closes, ["tree", "tree"])
+
+
 class SummaryTest(unittest.TestCase):
     def test_counts(self):
         self.assertEqual(text(at.summary(snap())), "2 agents  ● 1  ◐ 1")
