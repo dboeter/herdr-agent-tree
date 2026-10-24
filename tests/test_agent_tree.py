@@ -46,7 +46,7 @@ class SettingsTest(ConfigDir):
         self.write(
             'side = "right"\nauto_dock = false\nauto_dock_min_width = 100\n'
             'workspace_color = "#ff9e64"\nflash = false\nhints = true\n'
-            'agents = ["claude"]\n'
+            'panes = false\nagents = ["claude"]\n'
         )
         s = at.settings()
         self.assertEqual(s.side, "right")
@@ -55,12 +55,14 @@ class SettingsTest(ConfigDir):
         self.assertEqual(s.workspace_color, (255, 158, 100))
         self.assertFalse(s.flash)
         self.assertTrue(s.hints)
+        self.assertFalse(s.panes)
         self.assertEqual(s.agents, ("claude",))
 
     def test_wrong_types_keep_defaults(self):
         self.write(
             'side = "up"\nauto_dock = "no"\nauto_dock_min_width = true\n'
-            'workspace_color = "blue"\nflash = 0\nhints = "yes"\nagents = [1]\n'
+            'workspace_color = "blue"\nflash = 0\nhints = "yes"\npanes = 0\n'
+            "agents = [1]\n"
         )
         self.assertEqual(at.settings(), at.Settings())
 
@@ -194,6 +196,12 @@ class BuildTest(unittest.TestCase):
         rows = at.build(s, set(), "t1", {})
         # A numbered tab leaves the pane's own label.
         self.assertTrue(text(rows[-1][3]).endswith("logs"))
+        # panes = false lists agents only.
+        rows = at.build(s, set(), "t1", {}, panes=False)
+        self.assertEqual(
+            [r[0] for r in rows],
+            [("ws", "w1"), ("agent", "p1"), ("ws", "w2"), ("agent", "p2")],
+        )
 
 
 class PaletteTest(unittest.TestCase):
@@ -365,6 +373,7 @@ class ConsistencyTest(unittest.TestCase):
         self.assertEqual(at.hex_rgb(example["workspace_color"]), at.PALETTE[0])
         self.assertEqual(example["flash"], d.flash)
         self.assertEqual(example["hints"], d.hints)
+        self.assertEqual(example["panes"], d.panes)
         self.assertEqual(tuple(example["agents"]), d.agents)
         with open(path) as f:
             listed = dict(re.findall(r"(\w+) (#[0-9a-f]{6})", f.read()))

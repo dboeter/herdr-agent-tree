@@ -34,6 +34,10 @@ flash = true
 # Show the tree's keys at the bottom of the tree, right above the footer divider.
 hints = false
 
+# List panes without an agent (shells, editors, logs) under their workspace, beside the
+# agents. false lists agents only.
+panes = true
+
 # Agents a workspace's right-click menu offers to start, each in a new tab of that
 # workspace ("New claude agent", ...). Each name is the command that starts the agent.
 agents = ["claude", "codex"]

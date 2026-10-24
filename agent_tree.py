@@ -110,6 +110,7 @@ class Settings:
     workspace_color: tuple | None = None  # (r, g, b) overriding PALETTE[0]
     flash: bool = True
     hints: bool = False
+    panes: bool = True  # false lists agents only, without rows for other panes
     # Agent kinds a workspace's right-click menu offers to start in a new tab; each is
     # also the command that starts it.
     agents: tuple = ("claude", "codex")
@@ -117,7 +118,7 @@ class Settings:
 
 def settings():
     """Settings from config.toml. A key that is missing or of the wrong type keeps its
-    default: only false turns auto_dock or flash off, only true turns hints on."""
+    default: only false turns auto_dock, flash or panes off, only true turns hints on."""
     cfg = config()
     width = cfg.get("auto_dock_min_width")
     agents = cfg.get("agents")
@@ -134,6 +135,7 @@ def settings():
         workspace_color=hex_rgb(cfg.get("workspace_color")),
         flash=cfg.get("flash") is not False,
         hints=cfg.get("hints") is True,
+        panes=cfg.get("panes") is not False,
         agents=tuple(agents),
     )
 
@@ -495,14 +497,17 @@ def palette(default=None):
     return colours
 
 
-def build(snap, collapsed, here, colors, default=None):
+def build(snap, collapsed, here, colors, default=None, panes=True):
     """Rows as (key, kind, payload, segments, flex); segments are (text, colour, bold).
-    kind is "ws", "agent", or "pane" for a pane with no agent in it."""
+    kind is "ws", "agent", or "pane" for a pane with no agent in it; panes=False leaves
+    those out."""
     tabs = {t["tab_id"]: t for t in snap["tabs"]}
     agent_panes = {a["pane_id"] for a in snap["agents"]}
     # Every pane but the trees and sidebars, as its agent when it has one.
     items = snap["agents"] + [
-        p for p in snap["panes"] if p["pane_id"] not in agent_panes and not chrome(p)
+        p
+        for p in snap["panes"]
+        if panes and p["pane_id"] not in agent_panes and not chrome(p)
     ]
     per_tab = {}
     for a in items:
@@ -855,7 +860,12 @@ class Tree:
                 colors = {w: i for w, i in colors.items() if w in live}
                 save("colors.json", colors)
         self.rows = build(
-            snap, set(collapsed), self.here, colors, self.settings.workspace_color
+            snap,
+            set(collapsed),
+            self.here,
+            colors,
+            self.settings.workspace_color,
+            self.settings.panes,
         )
         self.footer = summary(snap)
         keys = [r[0] for r in self.rows]
@@ -1079,7 +1089,7 @@ class Tree:
         """The cog menu: each item flips one config.toml setting and reopens the menu,
         so its label shows the new value."""
         s = self.settings
-        hints, flash, auto = s.hints, s.flash, s.auto_dock
+        hints, flash, panes, auto = s.hints, s.flash, s.panes, s.auto_dock
         right = s.side == "right"
         current = s.workspace_color or GROUP
         index = PALETTE.index(current) if current in PALETTE else -1
@@ -1096,6 +1106,7 @@ class Tree:
         items = [
             (f"Key hints: {'on' if hints else 'off'}", flip("hints", not hints)),
             (f"Flash: {'on' if flash else 'off'}", flip("flash", not flash)),
+            (f"Other panes: {'on' if panes else 'off'}", flip("panes", not panes)),
             (
                 f"Default colour: {SWATCHES[index][0] if index >= 0 else 'custom'}",
                 flip("workspace_color", "#{:02x}{:02x}{:02x}".format(*PALETTE[nxt])),

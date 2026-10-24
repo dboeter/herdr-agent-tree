@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- `panes = false` (Other panes in the cog menu) hides the rows for panes without an
+  agent, listing agents only.
 - Panes without an agent get rows too, marked with a terminal icon and named after their
   tab, their own label or their directory. Selecting one focuses it; counts stay agent-only.
 - The tree pane no longer shows an "Agent Tree" title on its border. Docked trees are
