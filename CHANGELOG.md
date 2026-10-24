@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 — 2026-10-24
 
 - `panes = false` (Other panes in the cog menu) hides the rows for panes without an
   agent, listing agents only.
