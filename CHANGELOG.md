@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- `panes = false` (Other panes in the cog menu) hides the rows for panes without an
+  agent, listing agents only.
+- Panes without an agent get rows too, marked `$` and named after their
+  tab, their own label or their directory. Selecting one focuses it; counts stay agent-only.
+- The tree pane no longer shows an "Agent Tree" title on its border. Docked trees are
+  recorded by pane id in `trees.json`, which is how the startup hook still finds the dead
+  ones a restored session leaves behind.
 - A startup hook closes the dead trees a restored session leaves in every tab and docks
   one in the focused tab, instead of each tab showing a plain shell until it is focused.
 - The heartbeat token is reported with a 20 s time-to-live, so herdr drops it when a tree

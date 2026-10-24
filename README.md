@@ -36,6 +36,10 @@ doing, which one needs you, and one keypress or click to jump there.
 - An agent is named after its tab, so renaming the tab renames the row. Several agents in
   one tab add their session titles (`api · fix tests`); a tab with only a number for a
   label shows the session title alone.
+- Panes without an agent are listed too, marked `$`, named after their tab
+  (plus their own label or directory when the tab holds several panes). Selecting one
+  focuses it. Counts and the footer cover agents only. `panes = false` (or Other panes
+  in the cog menu) lists agents only.
 - A folded workspace counts its blocked, working and done agents on its own row.
 - The footer counts all agents, and how many are blocked, working or done ("all idle"
   when every agent is idle).
@@ -112,7 +116,7 @@ is not zoomed. Set `auto_dock = false` to only open trees with the toggle action
 | `r` | Rename the workspace, or the agent's tab (`Enter` saves, `Esc` cancels) |
 | `c` `C` | Cycle the workspace colour |
 | right-click | On an agent: focus, rename tab, fold workspace, cycle colour, close pane. On a workspace: fold/unfold, a new agent from the `New agent ›` submenu (hover, click or `→`), new tab, rename, cycle colour, close workspace. `Esc` or a click elsewhere closes the menu |
-| `s` / click the cog in the footer | Settings menu: key hints, flash, default colour, auto-dock, dock side |
+| `s` / click the cog in the footer | Settings menu: key hints, flash, other panes, default colour, auto-dock, dock side |
 | `q` | Close the tree and keep this tab free of it |
 | `Ctrl-C` | Quit the tree process only; auto-dock brings it back within about 20 s |
 
@@ -137,12 +141,13 @@ auto_dock_min_width = 84     # edge pane width (columns) a tab needs before a tr
 workspace_color = "#7dcfff"  # default workspace colour; c/C still cycles the palette
 flash = true                 # false stops rows flashing when an agent becomes blocked or done
 hints = false                # true shows the tree's keys above the footer
+panes = true                 # false lists agents only, without rows for other panes
 agents = ["claude", "codex"]  # agents a workspace's right-click menu can start in a new tab
 ```
 
 [`config.example.toml`](config.example.toml) explains each key, with the palette's
 colours. The cog menu rewrites the file with its keys only, so comments in it are dropped.
-Open trees pick up `workspace_color`, `flash`, `hints` and `agents` within a few seconds (up to 10 s in a hidden tab);
+Open trees pick up `workspace_color`, `flash`, `hints`, `panes` and `agents` within a few seconds (up to 10 s in a hidden tab);
 `auto_dock` and `auto_dock_min_width` apply from the next tab switch. `side`
 applies to new trees; to move an open tree, toggle it off and on again.
 
@@ -175,7 +180,7 @@ A `ModuleNotFoundError: No module named 'tomllib'` there means `python3` is olde
 **Boxes instead of the carets, plus and cog.** The terminal font is not a
 [Nerd Font](https://www.nerdfonts.com). Install one and select it in your terminal.
 
-**A pane titled "Agent Tree" shows a plain shell.** herdr restored a saved session, which
+**A narrow pane shows a plain shell where a tree was.** herdr restored a saved session, which
 brings back the pane but not its process. The startup hook closes these when herdr starts;
 one that slips through is replaced the next time you focus that tab.
 

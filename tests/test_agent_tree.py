@@ -22,11 +22,11 @@ class ConfigDir(unittest.TestCase):
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        self.saved = at.CONFIG
-        at.CONFIG = self.tmp.name
+        self.saved = at.CONFIG, at.STATE
+        at.CONFIG = at.STATE = self.tmp.name
 
     def tearDown(self):
-        at.CONFIG = self.saved
+        at.CONFIG, at.STATE = self.saved
         self.tmp.cleanup()
 
     def write(self, text):
@@ -46,7 +46,7 @@ class SettingsTest(ConfigDir):
         self.write(
             'side = "right"\nauto_dock = false\nauto_dock_min_width = 100\n'
             'workspace_color = "#ff9e64"\nflash = false\nhints = true\n'
-            'agents = ["claude"]\n'
+            'panes = false\nagents = ["claude"]\n'
         )
         s = at.settings()
         self.assertEqual(s.side, "right")
@@ -55,12 +55,14 @@ class SettingsTest(ConfigDir):
         self.assertEqual(s.workspace_color, (255, 158, 100))
         self.assertFalse(s.flash)
         self.assertTrue(s.hints)
+        self.assertFalse(s.panes)
         self.assertEqual(s.agents, ("claude",))
 
     def test_wrong_types_keep_defaults(self):
         self.write(
             'side = "up"\nauto_dock = "no"\nauto_dock_min_width = true\n'
-            'workspace_color = "blue"\nflash = 0\nhints = "yes"\nagents = [1]\n'
+            'workspace_color = "blue"\nflash = 0\nhints = "yes"\npanes = 0\n'
+            "agents = [1]\n"
         )
         self.assertEqual(at.settings(), at.Settings())
 
@@ -158,6 +160,48 @@ class BuildTest(unittest.TestCase):
         # A renamed tab shows on every row; the session title tells two agents apart.
         self.assertTrue(text(rows[1][3]).endswith("api"))
         self.assertTrue(text(rows[2][3]).endswith("api · fix tests"))
+
+    def test_plain_panes_get_rows_beside_agents(self):
+        s = snap()
+        s["panes"] += [
+            {
+                "pane_id": "p4",
+                "tab_id": "t1",
+                "workspace_id": "w1",
+                "cwd": "/home/me/notes",
+            },
+            {
+                "pane_id": "p5",
+                "tab_id": "t2",
+                "workspace_id": "w2",
+                "cwd": "/srv",
+                "label": "logs",
+            },
+            {  # a tree: not a row
+                "pane_id": "p6",
+                "tab_id": "t1",
+                "workspace_id": "w1",
+                "tokens": {at.TOKEN: "1"},
+            },
+        ]
+        rows = at.build(s, {"w2"}, "t1", {})
+        self.assertEqual(
+            [r[0] for r in rows],
+            [("ws", "w1"), ("agent", "p1"), ("pane", "p4"), ("ws", "w2")],
+        )
+        # The tab label names both panes in it; the directory tells them apart.
+        self.assertTrue(text(rows[2][3]).endswith(f"{at.SHELL} api · notes"))
+        # A folded workspace counts agents only.
+        self.assertTrue(text(rows[3][3]).endswith("● 1"))
+        rows = at.build(s, set(), "t1", {})
+        # A numbered tab leaves the pane's own label.
+        self.assertTrue(text(rows[-1][3]).endswith("logs"))
+        # panes = false lists agents only.
+        rows = at.build(s, set(), "t1", {}, panes=False)
+        self.assertEqual(
+            [r[0] for r in rows],
+            [("ws", "w1"), ("agent", "p1"), ("ws", "w2"), ("agent", "p2")],
+        )
 
 
 class PaletteTest(unittest.TestCase):
@@ -258,6 +302,56 @@ class StartupTest(ConfigDir):
         self.assertEqual(calls, [("pane.close", {"pane_id": "a"})])
         ensure_tab.assert_called_once()
 
+    def test_finds_restored_trees_by_recorded_id_and_cwd(self):
+        at.save("trees.json", {"a": "/plugin", "c": "/plugin"})
+        snap = {
+            "panes": [
+                {"pane_id": "a", "tab_id": "t1", "cwd": "/plugin"},  # restored shell
+                {"pane_id": "c", "tab_id": "t2", "cwd": "/home/me"},  # id reused
+            ]
+        }
+        self.assertEqual([p["pane_id"] for p in at.tree_panes(snap)], ["a"])
+
+
+class DockTest(ConfigDir):
+    def test_records_the_new_tree_and_keeps_dead_ones_still_present(self):
+        at.save("trees.json", {"dead": "/plugin", "gone": "/plugin"})
+        snap = {
+            "panes": [
+                {"pane_id": "work", "tab_id": "t1"},
+                {"pane_id": "dead", "tab_id": "t2", "cwd": "/plugin"},
+            ]
+        }
+        rect = {"x": 0, "y": 0, "width": 200, "height": 50}
+        layout = {
+            "zoomed": False,
+            "area": rect,
+            "panes": [{"pane_id": "work", "rect": rect}],
+            "splits": [],
+        }
+        replies = {
+            "pane.layout": {"layout": layout},
+            "plugin.pane.open": {
+                "plugin_pane": {"pane": {"pane_id": "new", "cwd": "/plugin"}}
+            },
+        }
+        calls = []
+
+        def call(method, params=None):
+            calls.append((method, params))
+            return replies.get(method, {})
+
+        with (
+            mock.patch.object(at, "snapshot", return_value=snap),
+            mock.patch.object(at, "call", call),
+            mock.patch.object(at, "fit"),
+        ):
+            at.dock("t1", 0)
+        self.assertIn(("pane.rename", {"pane_id": "new", "label": None}), calls)
+        self.assertEqual(
+            at.load("trees.json", None), {"dead": "/plugin", "new": "/plugin"}
+        )
+
 
 class ConsistencyTest(unittest.TestCase):
     """Facts kept in two files, which comments ask to keep in step."""
@@ -279,6 +373,7 @@ class ConsistencyTest(unittest.TestCase):
         self.assertEqual(at.hex_rgb(example["workspace_color"]), at.PALETTE[0])
         self.assertEqual(example["flash"], d.flash)
         self.assertEqual(example["hints"], d.hints)
+        self.assertEqual(example["panes"], d.panes)
         self.assertEqual(tuple(example["agents"]), d.agents)
         with open(path) as f:
             listed = dict(re.findall(r"(\w+) (#[0-9a-f]{6})", f.read()))
