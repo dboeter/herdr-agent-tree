@@ -419,7 +419,7 @@ STATUS = {  # agent_status -> glyph, colour
     "unknown": ("·", (110, 110, 120)),
 }
 DIM = (110, 110, 120)
-SHELL = "\uf120"  # fa-terminal: a pane with no agent in it
+SHELL = "\uf489"  # nf-oct-terminal (fa-terminal is too large): a pane, no agent
 GROUP = (125, 207, 255)
 # Workspace colours, cycled with c/C or the right-click menu; index 0 is the default.
 # config.example.toml lists the same colours in hex; keep the two in step.
