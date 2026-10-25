@@ -833,14 +833,24 @@ class Tree:
         self.active = False  # whether this tree's own pane has focus; shows the bar
         self.motion = False  # whether the terminal reports mouse motion (?1003h)
         self.settings = Settings()  # config.toml at the last refresh
+        self.refused = False  # herdr refused to close this tree when it was left alone
 
     def refresh(self):
         snap = snapshot()
         if self.me and alone(snap, self.me):
             # Every other pane in the tab closed. herdr closes a tab with its last pane,
             # so this takes the tab with it; not close(), which would snooze the tab.
-            call("pane.close", {"pane_id": self.me})
-            raise SystemExit
+            if not self.refused:
+                try:
+                    call("pane.close", {"pane_id": self.me})
+                except RuntimeError:
+                    # herdr said no (the session's last pane, perhaps): stay and keep
+                    # drawing, and only ask again once the tab has had company.
+                    self.refused = True
+                else:
+                    raise SystemExit
+        else:
+            self.refused = False
         self.settings = settings()
         mine = next((p for p in snap["panes"] if p["pane_id"] == self.me), None)
         self.here = mine["tab_id"] if mine else None
