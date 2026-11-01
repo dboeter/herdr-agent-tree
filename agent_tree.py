@@ -600,6 +600,15 @@ def summary(snap):
     return segs
 
 
+def fit_summary(segs, width):
+    """summary() for a footer of width columns (PAD included): when it doesn't fit, the
+    total drops its word ("2 agents" -> "2") so the state counts after it stay visible."""
+    if len(segs) > 1 and PAD + sum(cols(t) for t, _, _ in segs) > width:
+        text, colour, bold = segs[0]
+        segs = [(text.split(" ", 1)[0], colour, bold)] + segs[1:]
+    return segs
+
+
 def hint_lines(width):
     """HINTS as paint segments that fit width (PAD included): keys in the default colour
     so they stand out, actions dimmed. Each group wraps every k hints, and all lines
@@ -1396,7 +1405,8 @@ class Tree:
             # Fonts draw the icons two cells wide, spilling into the space after each;
             # the plus gets two spaces so it sits clear of the cog.
             icons = f"\x1b[{fg(DIM)}m{PLUS}  {COG}\x1b[39m "
-            frame += f"\x1b[{height};1H" + paint(self.footer, width - 5) + icons
+            footer = fit_summary(self.footer, width - 5)
+            frame += f"\x1b[{height};1H" + paint(footer, width - 5) + icons
         if self.menu:
             frame += self.draw_menu(width, body, height)
         # Motion reports only while a menu is open, for hover; otherwise every mouse move
