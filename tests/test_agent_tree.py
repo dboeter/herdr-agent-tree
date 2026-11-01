@@ -308,6 +308,14 @@ class SummaryTest(unittest.TestCase):
         s["agents"][0]["agent_status"] = "unknown"
         self.assertEqual(text(at.summary(s)), "2 agents")
 
+    def test_narrow_drops_the_word_not_the_states(self):
+        segs = at.summary(snap())
+        wide = at.PAD + at.cols(text(segs))
+        self.assertEqual(text(at.fit_summary(segs, wide)), "2 agents  ● 1  ◐ 1")
+        self.assertEqual(text(at.fit_summary(segs, wide - 1)), "2  ● 1  ◐ 1")
+        empty = at.summary(snap(agents=[]))
+        self.assertEqual(text(at.fit_summary(empty, 3)), "no agents")
+
 
 class TextTest(unittest.TestCase):
     def test_cols(self):

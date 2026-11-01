@@ -4,6 +4,8 @@
 
 - A tree left as the only pane in its tab closes itself, so closing a tab's last work pane
   closes the tab (and its workspace, when that was the last tab) instead of leaving the tree.
+- A narrow footer drops the word "agents" from the total ("3  ● 1") instead of cutting off
+  the state counts.
 
 ## 0.3.0 — 2026-10-24
 
