@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.0 — 2026-11-03
 
 - A tree left as the only pane in its tab closes itself, so closing a tab's last work pane
   closes the tab (and its workspace, when that was the last tab) instead of leaving the tree.
