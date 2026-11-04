@@ -28,9 +28,7 @@
   <text x="80" y="338" font-size="20" fill="#737aa2" xml:space="preserve"><tspan class="blocked">●</tspan> blocked   <tspan class="working">◐</tspan> working   <tspan class="done">✓</tspan> done   <tspan class="dim">○</tspan> idle   <tspan class="dim">$</tspan> shell</text>
 
   <!-- Tree pane, as herdr frames it -->
-  <rect x="790" y="40" width="430" height="320" rx="4" fill="#1a1b26" stroke="#7dcfff" stroke-width="2"/>
-  <rect x="808" y="28" width="132" height="24" fill="#1a1b26"/>
-  <text x="814" y="47" font-size="20" font-weight="bold" fill="#7dcfff">Agent Tree</text>
+  <rect x="790" y="58" width="430" height="302" rx="4" fill="#1a1b26" stroke="#7dcfff" stroke-width="2"/>
 
   <!-- The tab you are in: tinted row, ▍ mark at the pane's left edge -->
   <rect x="792" y="95" width="426" height="27" fill="#263140"/>
