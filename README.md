@@ -2,8 +2,6 @@
 
 <img src="assets/banner.png" alt="Agent Tree: every workspace and agent in herdr, as a live tree beside your work" width="100%">
 
-<img src="assets/tree.png" alt="Agent Tree docked beside a tab: workspaces with their agents and status marks" width="100%">
-
 <a href="https://github.com/dboeter/herdr-agent-tree/releases"><img src="https://img.shields.io/github/v/release/dboeter/herdr-agent-tree?style=flat-square" alt="Latest release"></a>
 <a href="https://github.com/dboeter/herdr-agent-tree/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/dboeter/herdr-agent-tree/ci.yml?branch=main&style=flat-square&label=CI" alt="CI"></a>
 <img src="https://img.shields.io/badge/python-%E2%89%A5%203.11-blue?style=flat-square" alt="Python 3.11+">
