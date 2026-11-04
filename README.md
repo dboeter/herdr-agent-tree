@@ -24,6 +24,8 @@ doing, which one needs you, and one keypress or click to jump there.
 
 ## What you get
 
+<img src="assets/tree.png" alt="Agent Tree docked left of a Claude session: four workspaces with their agents and status marks, two of them folded to their counts, and the footer totals" width="100%">
+
 - Status per agent: `●` blocked, `◐` working, `✓` done, `○` idle. A row flashes when its
   agent becomes blocked or done; a collapsed workspace flashes on its agents' behalf.
 - `▍` at the left edge marks the agent in the tab you are looking at, and that workspace's name is
