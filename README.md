@@ -1,8 +1,6 @@
 <div align="center">
 
-# Agent Tree
-
-**Every workspace and agent in herdr, as a live tree beside your work**
+<img src="assets/banner.png" alt="Agent Tree: every workspace and agent in herdr, as a live tree beside your work" width="100%">
 
 <img src="assets/tree.png" alt="Agent Tree docked beside a tab: workspaces with their agents and status marks" width="100%">
 
