@@ -1,49 +1,55 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1280" height="400" viewBox="0 0 1280 400">
+  <!-- Colours and glyphs follow agent_tree.py (STATUS, DIM, GROUP, BASE_BG, HERE_TINT).
+       banner.png is this file rendered by headless Chromium at 1280x400; re-render it after edits. -->
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#1a1b26"/>
-      <stop offset="1" stop-color="#16131f"/>
+      <stop offset="0" stop-color="#1f2030"/>
+      <stop offset="1" stop-color="#15141f"/>
     </linearGradient>
     <style>
       text { font-family: 'JetBrainsMono Nerd Font Mono', 'JetBrains Mono', 'DejaVu Sans Mono', monospace; }
-      .row { font-size: 21px; fill: #c0caf5; }
-      .ws { font-size: 21px; fill: #7aa2f7; }
-      .ws-dim { font-size: 21px; fill: #3d59a1; }
-      .num { font-size: 21px; fill: #565f89; }
-      .guide { stroke: #3b4261; stroke-width: 1.5; fill: none; }
+      .t { font-size: 21px; fill: #c0caf5; }
+      .dim { fill: #6e6e78; }
+      .sky { fill: #7dcfff; }
+      .sky-dim { fill: #6099be; }
+      .blocked { fill: #f7768e; }
+      .working { fill: #e0af68; }
+      .done { fill: #9ece6a; }
     </style>
   </defs>
 
   <rect width="1280" height="400" fill="url(#bg)"/>
 
   <!-- Title block -->
-  <text x="80" y="118" font-size="20" fill="#565f89" letter-spacing="3">HERDR PLUGIN</text>
-  <text x="76" y="200" font-size="84" font-weight="bold" fill="#c0caf5">Agent <tspan fill="#4fd6be">Tree</tspan></text>
+  <text x="80" y="118" font-size="20" fill="#6e6e78" letter-spacing="3">HERDR PLUGIN</text>
+  <text x="76" y="200" font-size="84" font-weight="bold" fill="#c0caf5">Agent <tspan fill="#7dcfff">Tree</tspan></text>
   <text x="80" y="250" font-size="24" fill="#a9b1d6">Every workspace and agent in herdr,</text>
   <text x="80" y="282" font-size="24" fill="#a9b1d6">as a live tree beside your work</text>
+  <text x="80" y="338" font-size="20" fill="#737aa2" xml:space="preserve"><tspan class="blocked">●</tspan> blocked   <tspan class="working">◐</tspan> working   <tspan class="done">✓</tspan> done   <tspan class="dim">○</tspan> idle   <tspan class="dim">$</tspan> shell</text>
 
-  <text x="80" y="338" font-size="20" xml:space="preserve"><tspan fill="#f7768e">●</tspan><tspan fill="#737aa2"> blocked   </tspan><tspan fill="#e0af68">◐</tspan><tspan fill="#737aa2"> working   </tspan><tspan fill="#9ece6a">✓</tspan><tspan fill="#737aa2"> done   </tspan><tspan fill="#737aa2">○ idle</tspan></text>
+  <!-- Tree pane, as herdr frames it -->
+  <rect x="790" y="40" width="430" height="320" rx="4" fill="#1a1b26" stroke="#7dcfff" stroke-width="2"/>
+  <rect x="808" y="28" width="132" height="24" fill="#1a1b26"/>
+  <text x="814" y="47" font-size="20" font-weight="bold" fill="#7dcfff">Agent Tree</text>
 
-  <!-- Tree pane -->
-  <rect x="790" y="40" width="430" height="320" rx="4" fill="#15161e" stroke="#4fd6be" stroke-width="2"/>
-  <rect x="808" y="28" width="132" height="24" fill="#15161e"/>
-  <text x="814" y="47" font-size="20" font-weight="bold" fill="#4fd6be">Agent Tree</text>
+  <!-- The tab you are in: tinted row, ▍ mark at the pane's left edge -->
+  <rect x="792" y="95" width="426" height="27" fill="#263140"/>
+  <rect x="794" y="95" width="5" height="27" fill="#7dcfff"/>
 
-  <text x="812" y="86" class="num">1</text><text x="836" y="86" class="ws"> homelab</text>
-  <path class="guide" d="M846 94 V160 M846 105 H858 M846 132 H858 M846 159 H858"/>
-  <text x="866" y="113" class="row"><tspan fill="#9ece6a">✓</tspan> Dashboard designs</text>
-  <text x="866" y="140" class="row"><tspan fill="#737aa2">○</tspan> Review auth</text>
-  <text x="866" y="167" class="row"><tspan fill="#f7768e">●</tspan> Codex</text>
+  <g class="t" xml:space="preserve">
+    <text x="812" y="86"><tspan class="dim">1 &#xf0d7; </tspan><tspan class="sky">herdr-agent-tree</tspan></text>
+    <text x="812" y="113"><tspan class="dim">  ├ </tspan><tspan class="working">◐</tspan> README Banner</text>
+    <text x="812" y="140"><tspan class="dim">  ├ </tspan><tspan class="done">✓</tspan> Narrow Footer</text>
+    <text x="812" y="167"><tspan class="dim">  └ $</tspan> Release</text>
 
-  <text x="812" y="194" class="num">2</text><text x="836" y="194" class="ws"> daily-diff</text>
-  <rect x="800" y="203" width="410" height="26" fill="#292e42"/>
-  <rect x="794" y="203" width="4" height="26" fill="#4fd6be"/>
-  <path class="guide" d="M846 202 V241 M846 213 H858 M846 240 H858"/>
-  <text x="866" y="221" class="row"><tspan fill="#e0af68">◐</tspan> Trends</text>
-  <text x="866" y="248" class="row"><tspan fill="#9ece6a">✓</tspan> Legislation</text>
+    <text x="812" y="194"><tspan class="dim">2 &#xf0d7; </tspan><tspan class="sky-dim">daily-diff</tspan></text>
+    <text x="812" y="221"><tspan class="dim">  ├ </tspan><tspan class="blocked">●</tspan> Weekly Trends</text>
+    <text x="812" y="248"><tspan class="dim">  └ ○</tspan> Digest</text>
 
-  <text x="812" y="275" class="num">3</text><text x="836" y="275" class="ws-dim"> cc-plugins</text>
+    <text x="812" y="275"><tspan class="dim">3 &#xf0da; </tspan><tspan class="sky-dim">dagent</tspan> <tspan class="working">◐ 2</tspan></text>
+  </g>
 
-  <line x1="800" y1="300" x2="1210" y2="300" stroke="#292e42" stroke-width="1.5"/>
-  <text x="812" y="336" xml:space="preserve" font-size="20" fill="#737aa2">6 agents  <tspan fill="#f7768e">● 1</tspan>  <tspan fill="#e0af68">◐ 1</tspan>  <tspan fill="#9ece6a">✓ 2</tspan></text>
+  <line x1="792" y1="300" x2="1218" y2="300" stroke="#44444d" stroke-width="1.5"/>
+  <text x="812" y="336" font-size="21" fill="#6e6e78" xml:space="preserve">6 agents  <tspan class="blocked">● 1</tspan>  <tspan class="working">◐ 3</tspan>  <tspan class="done">✓ 1</tspan></text>
+  <text x="1150" y="336" font-size="21" fill="#6e6e78" xml:space="preserve">&#xf067;  &#xf013;</text>
 </svg>
