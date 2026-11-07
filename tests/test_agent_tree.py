@@ -294,31 +294,50 @@ class AutoCloseTest(ConfigDir):
         self.assertEqual(closes, ["tree", "tree"])
 
 
+def with_panes(s):
+    """Two plain panes beside the agents, and a tree, which is not counted."""
+    s["panes"] += [
+        {"pane_id": "p4", "tab_id": "t1", "workspace_id": "w1", "cwd": "/a"},
+        {"pane_id": "p5", "tab_id": "t2", "workspace_id": "w2", "cwd": "/b"},
+        {
+            "pane_id": "p6",
+            "tab_id": "t1",
+            "workspace_id": "w1",
+            "tokens": {at.TOKEN: "1"},
+        },
+    ]
+    return s
+
+
 class SummaryTest(unittest.TestCase):
     def test_counts(self):
-        self.assertEqual(text(at.summary(snap())), "2 agents  ● 1  ◐ 1")
+        self.assertEqual(text(at.summary(snap())), "◐ 1  ● 1")
+
+    def test_idle_and_panes_use_the_tree_icons(self):
+        s = with_panes(snap())
+        s["agents"][1]["agent_status"] = "idle"
+        self.assertEqual(text(at.summary(s)), f"{at.SHELL} 2  ○ 1  ● 1")
+        # panes = false lists agents only, in the tree and in the footer.
+        self.assertEqual(text(at.summary(s, panes=False)), "○ 1  ● 1")
 
     def test_idle_and_empty(self):
         idle = snap()
         for a in idle["agents"]:
             a["agent_status"] = "idle"
-        self.assertEqual(text(at.summary(idle)), "2 agents · all idle")
-        self.assertEqual(text(at.summary(snap(agents=[]))), "no agents")
+        self.assertEqual(text(at.summary(idle)), "○ 2")
+        self.assertEqual(text(at.summary(snap(agents=[], panes=[]))), "no agents")
+        panes_only = with_panes(snap(agents=[]))
+        self.assertEqual(text(at.summary(panes_only)), f"{at.SHELL} 4")
 
-    def test_unknown_is_not_idle(self):
+    def test_unknown_has_its_own_mark(self):
         s = snap()
         for a in s["agents"]:
             a["agent_status"] = "idle"
         s["agents"][0]["agent_status"] = "unknown"
-        self.assertEqual(text(at.summary(s)), "2 agents")
-
-    def test_narrow_drops_the_word_not_the_states(self):
-        segs = at.summary(snap())
-        wide = at.PAD + at.cols(text(segs))
-        self.assertEqual(text(at.fit_summary(segs, wide)), "2 agents  ● 1  ◐ 1")
-        self.assertEqual(text(at.fit_summary(segs, wide - 1)), "2  ● 1  ◐ 1")
-        empty = at.summary(snap(agents=[]))
-        self.assertEqual(text(at.fit_summary(empty, 3)), "no agents")
+        self.assertEqual(text(at.summary(s)), "○ 1  ? 1")
+        # A status herdr adds later is unknown to the tree, and counts as such.
+        s["agents"][1]["agent_status"] = "thinking"
+        self.assertEqual(text(at.summary(s)), "? 2")
 
 
 class TextTest(unittest.TestCase):

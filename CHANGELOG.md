@@ -8,6 +8,10 @@
   workspace row shows it when all its agents and panes in a repo share one; otherwise
   each of them shows its own.
   Branch prefixes shorten to a letter (`f/login`). Both off by default.
+- The footer counts agents per state, idle included, and panes without an agent, with
+  the tree's marks (`$ 2  ○ 4  ◐ 1  ● 1  ✓ 1  ? 1`), instead of an agent total and
+  "all idle". `panes = false` leaves the pane count out.
+- An agent of unknown status is marked `?` (was `·`).
 
 ## 0.4.0 — 2026-11-03
 

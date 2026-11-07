@@ -432,7 +432,7 @@ STATUS = {  # agent_status -> glyph, colour
     "working": ("◐", (224, 175, 104)),
     "done": ("✓", (158, 206, 106)),
     "idle": ("○", (110, 110, 120)),
-    "unknown": ("·", (110, 110, 120)),
+    "unknown": ("?", (110, 110, 120)),
 }
 DIM = (110, 110, 120)
 SHELL = "$"  # a pane with no agent: a prompt, and no arrow to read as a fold caret
@@ -490,10 +490,11 @@ def bg(rgb):
     return f"48;2;{r};{g};{b}"
 
 
-def status_counts(agents, sep):
-    """A segment per state that wants attention, sep before each: e.g. " ● 2"."""
+def status_counts(agents, sep, states=("blocked", "working", "done")):
+    """A segment per state with agents in it, sep before each: e.g. " ● 2". By default
+    the states that want attention."""
     segs = []
-    for status in ("blocked", "working", "done"):
+    for status in states:
         n = sum(a["agent_status"] == status for a in agents)
         if n:
             glyph, colour = STATUS[status]
@@ -803,27 +804,29 @@ class GitWatch:
         return None
 
 
-def summary(snap):
-    """Footer segments: agent total, then a count per state that wants attention.
-    Idle is left out (with everything idle it would just repeat the total), so an
-    all-idle footer says so instead. Agents of unknown status are not idle."""
-    agents = snap["agents"]
-    if not agents:
+def summary(snap, panes=True):
+    """Footer segments with the tree's glyphs: the panes without an agent ($), then a
+    count per agent state, calm to urgent and unknown last; panes=False leaves the
+    panes out, as the tree does."""
+    items, agent_panes = members(snap, panes)
+    others = sum(a["pane_id"] not in agent_panes for a in items)
+    segs = [(f"  {SHELL} {others}", DIM, False)] if others else []
+    # A status the tree has no glyph for draws as unknown in its row; count it so too.
+    agents = [
+        {
+            "agent_status": a["agent_status"]
+            if a["agent_status"] in STATUS
+            else "unknown"
+        }
+        for a in snap["agents"]
+    ]
+    segs += status_counts(
+        agents, "  ", ("idle", "working", "blocked", "done", "unknown")
+    )
+    if not segs:
         return [("no agents", DIM, False)]
-    segs = [(f"{len(agents)} agent{'' if len(agents) == 1 else 's'}", DIM, False)]
-    segs += status_counts(agents, "  ")
-    if all(a["agent_status"] == "idle" for a in agents):
-        segs.append((" · idle" if len(agents) == 1 else " · all idle", DIM, False))
-    return segs
-
-
-def fit_summary(segs, width):
-    """summary() for a footer of width columns (PAD included): when it doesn't fit, the
-    total drops its word ("2 agents" -> "2") so the state counts after it stay visible."""
-    if len(segs) > 1 and PAD + sum(cols(t) for t, _, _ in segs) > width:
-        text, colour, bold = segs[0]
-        segs = [(text.split(" ", 1)[0], colour, bold)] + segs[1:]
-    return segs
+    text, colour, bold = segs[0]
+    return [(text.lstrip(), colour, bold)] + segs[1:]
 
 
 def hint_lines(width):
@@ -1149,7 +1152,7 @@ class Tree:
             self.settings.git_branch,
             self.settings.git_marks,
         )
-        self.footer = summary(snap)
+        self.footer = summary(snap, self.settings.panes)
         keys = [r[0] for r in self.rows]
         self.active = self.me is not None and snap.get("focused_pane_id") == self.me
         if focused and not self.focused:
@@ -1661,8 +1664,7 @@ class Tree:
             # Fonts draw the icons two cells wide, spilling into the space after each;
             # the plus gets two spaces so it sits clear of the cog.
             icons = f"\x1b[{fg(DIM)}m{PLUS}  {COG}\x1b[39m "
-            footer = fit_summary(self.footer, width - 5)
-            frame += f"\x1b[{height};1H" + paint(footer, width - 5) + icons
+            frame += f"\x1b[{height};1H" + paint(self.footer, width - 5) + icons
         if self.menu:
             frame += self.draw_menu(width, body, height)
         # Motion reports only while a menu is open, for hover; otherwise every mouse move
