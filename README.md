@@ -36,8 +36,9 @@ doing, which one needs you, and one keypress or click to jump there.
   label shows the session title alone.
 - Panes without an agent are listed too, marked `$`, named after their tab
   (plus their own label or directory when the tab holds several panes). Selecting one
-  focuses it. Counts and the footer cover agents only. `panes = false` (or Other panes
-  in the cog menu) lists agents only.
+  focuses it. A folded workspace's counts cover agents only; the footer counts these
+  panes after the agents. `panes = false` (or Other panes in the cog menu) lists
+  agents only, in the tree and the footer.
 - A folded workspace counts its blocked, working and done agents on its own row.
 - With `git_branch = true` (or Git branch in the cog menu), a workspace row shows the
   git branch most of its agents and panes are on, at the right. `git_marks = true` (Git
@@ -48,8 +49,9 @@ doing, which one needs you, and one keypress or click to jump there.
   shows its counts instead.
 - A tree left as the only pane in its tab closes itself, and herdr closes the tab with it
   (and the workspace, when that was its last tab).
-- The footer counts all agents, and how many are blocked, working or done ("all idle"
-  when every agent is idle). In a narrow pane the total loses its word ("3  ● 1") first.
+- The footer counts all agents, how many are blocked, working, done or idle, and the
+  panes without an agent, with the tree's marks (`6 agents  ◐ 1  ✓ 1  ○ 4  $ 2`). In a
+  narrow pane the total loses its word ("6  ◐ 1 …") first.
 
 ## Requirements
 

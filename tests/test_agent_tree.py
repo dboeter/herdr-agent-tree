@@ -294,31 +294,58 @@ class AutoCloseTest(ConfigDir):
         self.assertEqual(closes, ["tree", "tree"])
 
 
+def with_panes(s):
+    """Two plain panes beside the agents, and a tree, which is not counted."""
+    s["panes"] += [
+        {"pane_id": "p4", "tab_id": "t1", "workspace_id": "w1", "cwd": "/a"},
+        {"pane_id": "p5", "tab_id": "t2", "workspace_id": "w2", "cwd": "/b"},
+        {
+            "pane_id": "p6",
+            "tab_id": "t1",
+            "workspace_id": "w1",
+            "tokens": {at.TOKEN: "1"},
+        },
+    ]
+    return s
+
+
 class SummaryTest(unittest.TestCase):
     def test_counts(self):
         self.assertEqual(text(at.summary(snap())), "2 agents  ● 1  ◐ 1")
+
+    def test_idle_and_panes_use_the_tree_icons(self):
+        s = with_panes(snap())
+        s["agents"][1]["agent_status"] = "idle"
+        self.assertEqual(text(at.summary(s)), f"2 agents  ● 1  ○ 1  {at.SHELL} 2")
+        # panes = false lists agents only, in the tree and in the footer.
+        self.assertEqual(text(at.summary(s, panes=False)), "2 agents  ● 1  ○ 1")
 
     def test_idle_and_empty(self):
         idle = snap()
         for a in idle["agents"]:
             a["agent_status"] = "idle"
-        self.assertEqual(text(at.summary(idle)), "2 agents · all idle")
-        self.assertEqual(text(at.summary(snap(agents=[]))), "no agents")
+        self.assertEqual(text(at.summary(idle)), "2 agents  ○ 2")
+        self.assertEqual(text(at.summary(snap(agents=[], panes=[]))), "no agents")
+        panes_only = with_panes(snap(agents=[]))
+        self.assertEqual(text(at.summary(panes_only)), f"no agents  {at.SHELL} 4")
 
     def test_unknown_is_not_idle(self):
         s = snap()
         for a in s["agents"]:
             a["agent_status"] = "idle"
         s["agents"][0]["agent_status"] = "unknown"
-        self.assertEqual(text(at.summary(s)), "2 agents")
+        self.assertEqual(text(at.summary(s)), "2 agents  ○ 1")
 
     def test_narrow_drops_the_word_not_the_states(self):
         segs = at.summary(snap())
         wide = at.PAD + at.cols(text(segs))
         self.assertEqual(text(at.fit_summary(segs, wide)), "2 agents  ● 1  ◐ 1")
         self.assertEqual(text(at.fit_summary(segs, wide - 1)), "2  ● 1  ◐ 1")
-        empty = at.summary(snap(agents=[]))
+        empty = at.summary(snap(agents=[], panes=[]))
         self.assertEqual(text(at.fit_summary(empty, 3)), "no agents")
+        # With panes after it, "no agents" shortens to a zero like any total.
+        segs = at.summary(snap(agents=[]))
+        self.assertEqual(text(at.fit_summary(segs, 5)), f"0  {at.SHELL} 2")
 
 
 class TextTest(unittest.TestCase):

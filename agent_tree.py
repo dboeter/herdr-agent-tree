@@ -490,10 +490,11 @@ def bg(rgb):
     return f"48;2;{r};{g};{b}"
 
 
-def status_counts(agents, sep):
-    """A segment per state that wants attention, sep before each: e.g. " ● 2"."""
+def status_counts(agents, sep, states=("blocked", "working", "done")):
+    """A segment per state with agents in it, sep before each: e.g. " ● 2". By default
+    the states that want attention."""
     segs = []
-    for status in ("blocked", "working", "done"):
+    for status in states:
         n = sum(a["agent_status"] == status for a in agents)
         if n:
             glyph, colour = STATUS[status]
@@ -803,26 +804,30 @@ class GitWatch:
         return None
 
 
-def summary(snap):
-    """Footer segments: agent total, then a count per state that wants attention.
-    Idle is left out (with everything idle it would just repeat the total), so an
-    all-idle footer says so instead. Agents of unknown status are not idle."""
+def summary(snap, panes=True):
+    """Footer segments: agent total, a count per state with the tree's glyphs, then the
+    panes without an agent ($); panes=False leaves those out, as the tree does. Agents
+    of unknown status count in the total only."""
     agents = snap["agents"]
-    if not agents:
-        return [("no agents", DIM, False)]
-    segs = [(f"{len(agents)} agent{'' if len(agents) == 1 else 's'}", DIM, False)]
-    segs += status_counts(agents, "  ")
-    if all(a["agent_status"] == "idle" for a in agents):
-        segs.append((" · idle" if len(agents) == 1 else " · all idle", DIM, False))
+    n = len(agents)
+    total = f"{n} agent{'' if n == 1 else 's'}" if agents else "no agents"
+    segs = [(total, DIM, False)]
+    segs += status_counts(agents, "  ", ("blocked", "working", "done", "idle"))
+    items, agent_panes = members(snap, panes)
+    others = sum(a["pane_id"] not in agent_panes for a in items)
+    if others:
+        segs.append((f"  {SHELL} {others}", DIM, False))
     return segs
 
 
 def fit_summary(segs, width):
     """summary() for a footer of width columns (PAD included): when it doesn't fit, the
-    total drops its word ("2 agents" -> "2") so the state counts after it stay visible."""
+    total drops its word ("2 agents" -> "2", "no agents" -> "0") so the counts after it
+    stay visible."""
     if len(segs) > 1 and PAD + sum(cols(t) for t, _, _ in segs) > width:
         text, colour, bold = segs[0]
-        segs = [(text.split(" ", 1)[0], colour, bold)] + segs[1:]
+        number = text.split(" ", 1)[0]
+        segs = [("0" if number == "no" else number, colour, bold)] + segs[1:]
     return segs
 
 
@@ -1149,7 +1154,7 @@ class Tree:
             self.settings.git_branch,
             self.settings.git_marks,
         )
-        self.footer = summary(snap)
+        self.footer = summary(snap, self.settings.panes)
         keys = [r[0] for r in self.rows]
         self.active = self.me is not None and snap.get("focused_pane_id") == self.me
         if focused and not self.focused:
