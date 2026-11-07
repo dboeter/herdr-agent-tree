@@ -703,6 +703,8 @@ def run_git(*args, cwd):
     return subprocess.run(
         ["git", "--no-optional-locks", "-C", cwd, *args],
         capture_output=True,
+        # Not the tree's terminal: a hook git runs (core.fsmonitor) would eat keystrokes.
+        stdin=subprocess.DEVNULL,
         text=True,
         timeout=GIT_TIMEOUT,
         check=True,

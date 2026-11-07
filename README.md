@@ -174,7 +174,8 @@ closes those in every tab and docks a fresh tree in the focused one.
 
 With `git_branch` or `git_marks` on, a thread in the focused tree runs `git status` on the repos of the panes
 listed (an agent's starting directory, a plain pane's current one) every 5 s, and the
-tree redraws when a result changes. It never takes git's index lock. A repo whose
+tree redraws when a result changes. A hidden tree keeps showing what it last saw, and
+shows nothing until its tab has been focused once. It never takes git's index lock. A repo whose
 status takes over 2 s, as on a Windows drive under WSL, shows its branch only for a
 minute before it is tried again.
 
