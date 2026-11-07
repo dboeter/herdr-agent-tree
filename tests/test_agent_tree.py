@@ -559,7 +559,24 @@ class GitBuildTest(unittest.TestCase):
         for r in at.build(git_snap(), set(), "t1", {}):
             self.assertEqual(r[5], [])
 
-    def test_workspace_shows_majority_repo_members_only_when_different(self):
+    def test_workspace_shows_a_repo_all_its_members_share(self):
+        s = git_snap()
+        s["agents"][2]["cwd"] = "/r"  # p3 joins p1 in /r
+        s["panes"].append(  # a shell outside any repo neither blocks nor counts
+            {"pane_id": "p5", "tab_id": "t1", "workspace_id": "w1", "cwd": "/tmp"}
+        )
+        rows = {r[0]: r for r in at.build(s, set(), "t1", {}, git=GIT)}
+        self.assertEqual(text(rows[("ws", "w1")][5]), "main *↑1")
+        for key in (("agent", "p1"), ("agent", "p3"), ("pane", "p5")):
+            self.assertEqual(rows[key][5], [])
+        # Outside any repo: nothing, on the workspace and its agent.
+        self.assertEqual(rows[("ws", "w2")][5], [])
+        self.assertEqual(rows[("agent", "p2")][5], [])
+        # Folded, the counts take the row instead.
+        rows = {r[0]: r for r in at.build(s, {"w1"}, "t1", {}, git=GIT)}
+        self.assertEqual(rows[("ws", "w1")][5], [])
+
+    def test_one_member_elsewhere_and_every_member_shows_its_own(self):
         s = git_snap()
         s["agents"].append(
             {
@@ -571,13 +588,11 @@ class GitBuildTest(unittest.TestCase):
             }
         )
         rows = {r[0]: r for r in at.build(s, set(), "t1", {}, git=GIT)}
-        self.assertEqual(text(rows[("ws", "w1")][5]), "main *↑1")
-        self.assertEqual(rows[("agent", "p1")][5], [])
-        self.assertEqual(rows[("agent", "p4")][5], [])
+        # Two of three in /r is not all of them.
+        self.assertEqual(rows[("ws", "w1")][5], [])
+        self.assertEqual(text(rows[("agent", "p1")][5]), "main *↑1")
+        self.assertEqual(text(rows[("agent", "p4")][5]), "main *↑1")
         self.assertEqual(text(rows[("agent", "p3")][5]), "f/x")
-        # Outside any repo: nothing, on the workspace and its agent.
-        self.assertEqual(rows[("ws", "w2")][5], [])
-        self.assertEqual(rows[("agent", "p2")][5], [])
 
     def test_without_a_majority_every_member_shows_its_own(self):
         # Two agents in two repos: neither is the workspace's.
@@ -598,13 +613,10 @@ class GitBuildTest(unittest.TestCase):
             }
         )
         rows = {r[0]: r for r in at.build(s, set(), "t1", {}, git=GIT, branch=False)}
-        self.assertEqual(text(rows[("ws", "w1")][5]), "*↑1")
+        self.assertEqual(rows[("ws", "w1")][5], [])
+        self.assertEqual(text(rows[("agent", "p1")][5]), "*↑1")
         # p3's worktree is clean: no marks, so no column.
         self.assertEqual(rows[("agent", "p3")][5], [])
-
-    def test_folded_workspace_keeps_counts_not_git(self):
-        rows = {r[0]: r for r in at.build(git_snap(), {"w1"}, "t1", {}, git=GIT)}
-        self.assertEqual(rows[("ws", "w1")][5], [])
 
     def test_git_dirs(self):
         self.assertEqual(at.git_dirs(git_snap()), {"/r", "/tmp", "/wt/sub"})

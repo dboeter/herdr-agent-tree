@@ -3,10 +3,10 @@
 ## Unreleased
 
 - `git_branch = true` and `git_marks = true` (Git branch and Git marks in the cog menu)
-  show the git branch most of a workspace's agents and panes are on, right-aligned on
-  its row, and the marks after it (`main *↑2`: `*` for uncommitted changes, `↑`/`↓` for
-  commits ahead and behind). Each works alone. One in another repo or
-  worktree shows its own; with no majority, each shows its own.
+  show git info right-aligned: the branch, and the marks after it (`main *↑2`: `*` for
+  uncommitted changes, `↑`/`↓` for commits ahead and behind). Each works alone. A
+  workspace row shows it when all its agents and panes in a repo share one; otherwise
+  each of them shows its own.
   Branch prefixes shorten to a letter (`f/login`). Both off by default.
 
 ## 0.4.0 — 2026-11-03

@@ -562,9 +562,9 @@ def build(
         agents = [a for a in mine if a["pane_id"] in agent_panes]
         repos = [git.get(git_dir(a, a["pane_id"] in agent_panes)) for a in mine]
         roots = [r[0] for r in repos if r]
-        # The repo more than half the members in a repo are in. Without one, the
-        # workspace row shows none and each member shows its own.
-        home = next((r for r in roots if 2 * roots.count(r) > len(roots)), None)
+        # The repo every member in a repo is in (panes outside any repo don't count).
+        # Without one, the workspace row shows none and each member shows its own.
+        home = roots[0] if roots and roots.count(roots[0]) == len(roots) else None
         open_ = wid not in collapsed
         ws_colour = palette(default)[colors.get(wid, 0) % len(PALETTE)]
         # The workspace you are looking at is at full colour; the others are dimmed,
