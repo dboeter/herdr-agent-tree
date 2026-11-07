@@ -49,9 +49,8 @@ doing, which one needs you, and one keypress or click to jump there.
   shows its counts instead.
 - A tree left as the only pane in its tab closes itself, and herdr closes the tab with it
   (and the workspace, when that was its last tab).
-- The footer counts all agents, how many are blocked, working, done or idle, and the
-  panes without an agent, with the tree's marks (`6 agents  ◐ 1  ✓ 1  ○ 4  $ 2`). In a
-  narrow pane the total loses its word ("6  ◐ 1 …") first.
+- The footer counts the agents in each state and the panes without an agent, with the
+  tree's marks (`◐ 1  ✓ 1  ○ 4  $ 2`).
 
 ## Requirements
 

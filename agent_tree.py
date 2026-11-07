@@ -805,30 +805,18 @@ class GitWatch:
 
 
 def summary(snap, panes=True):
-    """Footer segments: agent total, a count per state with the tree's glyphs, then the
-    panes without an agent ($); panes=False leaves those out, as the tree does. Agents
-    of unknown status count in the total only."""
-    agents = snap["agents"]
-    n = len(agents)
-    total = f"{n} agent{'' if n == 1 else 's'}" if agents else "no agents"
-    segs = [(total, DIM, False)]
-    segs += status_counts(agents, "  ", ("blocked", "working", "done", "idle"))
+    """Footer segments: a count per agent state with the tree's glyphs, then the panes
+    without an agent ($); panes=False leaves those out, as the tree does."""
+    states = ("blocked", "working", "done", "idle", "unknown")
+    segs = status_counts(snap["agents"], "  ", states)
     items, agent_panes = members(snap, panes)
     others = sum(a["pane_id"] not in agent_panes for a in items)
     if others:
         segs.append((f"  {SHELL} {others}", DIM, False))
-    return segs
-
-
-def fit_summary(segs, width):
-    """summary() for a footer of width columns (PAD included): when it doesn't fit, the
-    total drops its word ("2 agents" -> "2", "no agents" -> "0") so the counts after it
-    stay visible."""
-    if len(segs) > 1 and PAD + sum(cols(t) for t, _, _ in segs) > width:
-        text, colour, bold = segs[0]
-        number = text.split(" ", 1)[0]
-        segs = [("0" if number == "no" else number, colour, bold)] + segs[1:]
-    return segs
+    if not segs:
+        return [("no agents", DIM, False)]
+    text, colour, bold = segs[0]
+    return [(text.lstrip(), colour, bold)] + segs[1:]
 
 
 def hint_lines(width):
@@ -1666,8 +1654,7 @@ class Tree:
             # Fonts draw the icons two cells wide, spilling into the space after each;
             # the plus gets two spaces so it sits clear of the cog.
             icons = f"\x1b[{fg(DIM)}m{PLUS}  {COG}\x1b[39m "
-            footer = fit_summary(self.footer, width - 5)
-            frame += f"\x1b[{height};1H" + paint(footer, width - 5) + icons
+            frame += f"\x1b[{height};1H" + paint(self.footer, width - 5) + icons
         if self.menu:
             frame += self.draw_menu(width, body, height)
         # Motion reports only while a menu is open, for hover; otherwise every mouse move

@@ -8,9 +8,9 @@
   commits ahead and behind). Each works alone. One in another repo or
   worktree shows its own; with no majority, each shows its own.
   Branch prefixes shorten to a letter (`f/login`). Both off by default.
-- The footer also counts idle agents (`○ 4`) and panes without an agent (`$ 2`), with
-  the tree's marks, instead of saying "all idle". `panes = false` leaves the pane count
-  out.
+- The footer counts agents per state, idle included, and panes without an agent, with
+  the tree's marks (`◐ 1  ✓ 1  ○ 4  $ 2`), instead of an agent total and "all idle".
+  `panes = false` leaves the pane count out.
 
 ## 0.4.0 — 2026-11-03
 
