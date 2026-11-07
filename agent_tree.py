@@ -548,8 +548,9 @@ def build(snap, collapsed, here, colors, default=None, panes=True, git=None):
         agents = [a for a in mine if a["pane_id"] in agent_panes]
         repos = [git.get(git_dir(a, a["pane_id"] in agent_panes)) for a in mine]
         roots = [r[0] for r in repos if r]
-        # The repo most members are in; a tie goes to the first member in tab order.
-        home = max(roots, key=roots.count) if roots else None
+        # The repo more than half the members in a repo are in. Without one, the
+        # workspace row shows none and each member shows its own.
+        home = next((r for r in roots if 2 * roots.count(r) > len(roots)), None)
         open_ = wid not in collapsed
         ws_colour = palette(default)[colors.get(wid, 0) % len(PALETTE)]
         # The workspace you are looking at is at full colour; the others are dimmed,
@@ -666,14 +667,16 @@ def short_branch(name):
 
 
 def git_segments(info):
-    segs = [(short_branch(info.branch), DIM, False)]
+    """main *↑2↓1: the branch, then a space and the marks, if any."""
+    marks = []
     if info.dirty:
-        segs.append(("*", DIRTY, False))
+        marks.append(("*", DIRTY, False))
     if info.ahead:
-        segs.append((f"↑{info.ahead}", DIM, False))
+        marks.append((f"↑{info.ahead}", DIM, False))
     if info.behind:
-        segs.append((f"↓{info.behind}", DIM, False))
-    return segs
+        marks.append((f"↓{info.behind}", DIM, False))
+    branch = (short_branch(info.branch), DIM, False)
+    return [branch, (" ", None, False), *marks] if marks else [branch]
 
 
 def run_git(*args, cwd):

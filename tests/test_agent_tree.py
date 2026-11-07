@@ -484,7 +484,7 @@ class GitTextTest(unittest.TestCase):
     def test_git_segments(self):
         self.assertEqual(text(at.git_segments(at.GitInfo("main", False))), "main")
         self.assertEqual(
-            text(at.git_segments(at.GitInfo("feat/x", True, 2, 1))), "f/x*↑2↓1"
+            text(at.git_segments(at.GitInfo("feat/x", True, 2, 1))), "f/x *↑2↓1"
         )
         # Status unknown (a slow repo): branch only.
         self.assertEqual(text(at.git_segments(at.GitInfo("main", None))), "main")
@@ -562,7 +562,7 @@ class GitBuildTest(unittest.TestCase):
             }
         )
         rows = {r[0]: r for r in at.build(s, set(), "t1", {}, git=GIT)}
-        self.assertEqual(text(rows[("ws", "w1")][5]), "main*↑1")
+        self.assertEqual(text(rows[("ws", "w1")][5]), "main *↑1")
         self.assertEqual(rows[("agent", "p1")][5], [])
         self.assertEqual(rows[("agent", "p4")][5], [])
         self.assertEqual(text(rows[("agent", "p3")][5]), "f/x")
@@ -570,9 +570,11 @@ class GitBuildTest(unittest.TestCase):
         self.assertEqual(rows[("ws", "w2")][5], [])
         self.assertEqual(rows[("agent", "p2")][5], [])
 
-    def test_tie_goes_to_first_member(self):
+    def test_without_a_majority_every_member_shows_its_own(self):
+        # Two agents in two repos: neither is the workspace's.
         rows = {r[0]: r for r in at.build(git_snap(), set(), "t1", {}, git=GIT)}
-        self.assertEqual(text(rows[("ws", "w1")][5]), "main*↑1")
+        self.assertEqual(rows[("ws", "w1")][5], [])
+        self.assertEqual(text(rows[("agent", "p1")][5]), "main *↑1")
         self.assertEqual(text(rows[("agent", "p3")][5]), "f/x")
 
     def test_folded_workspace_keeps_counts_not_git(self):

@@ -2,9 +2,10 @@
 
 ## Unreleased
 
-- `git = true` (Git branches in the cog menu) shows each workspace's git branch
-  right-aligned on its row, with `*` for uncommitted changes and `↑`/`↓` for commits
-  ahead and behind; agents and panes in another repo or worktree show their own.
+- `git = true` (Git branches in the cog menu) shows the git branch most of a
+  workspace's agents and panes are on, right-aligned on its row (`main *↑2`: `*` for
+  uncommitted changes, `↑`/`↓` for commits ahead and behind). One in another repo or
+  worktree shows its own; with no majority, each shows its own.
   Branch prefixes shorten to a letter (`f/login`). Off by default.
 
 ## 0.4.0 — 2026-11-03

@@ -39,9 +39,10 @@ doing, which one needs you, and one keypress or click to jump there.
   focuses it. Counts and the footer cover agents only. `panes = false` (or Other panes
   in the cog menu) lists agents only.
 - A folded workspace counts its blocked, working and done agents on its own row.
-- With `git = true` (or Git branches in the cog menu), a workspace row shows its git
-  branch at the right, with `*` for uncommitted changes and `↑`/`↓` for commits ahead of
-  and behind the upstream. An agent or pane in another repo or worktree shows its own.
+- With `git = true` (or Git branches in the cog menu), a workspace row shows the git
+  branch most of its agents and panes are on, at the right (`main *↑2`: `*` for
+  uncommitted changes, `↑`/`↓` for commits ahead of and behind the upstream). One in
+  another repo or worktree shows its own; with no majority, each shows its own.
   Prefixes shorten to a letter (`feat/login` shows as `f/login`). A folded workspace
   shows its counts instead.
 - A tree left as the only pane in its tab closes itself, and herdr closes the tab with it
