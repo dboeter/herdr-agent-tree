@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- `git = true` (Git branches in the cog menu) shows each workspace's git branch
+  right-aligned on its row, with `*` for uncommitted changes and `↑`/`↓` for commits
+  ahead and behind; agents and panes in another repo or worktree show their own.
+  Branch prefixes shorten to a letter (`f/login`). Off by default.
+
 ## 0.4.0 — 2026-11-03
 
 - A tree left as the only pane in its tab closes itself, so closing a tab's last work pane
