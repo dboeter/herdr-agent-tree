@@ -26,7 +26,7 @@ doing, which one needs you, and one keypress or click to jump there.
 
 <img src="assets/tree.png" alt="Agent Tree docked left of a Claude session: four workspaces with their agents and status marks, two of them folded to their counts, and the footer totals" width="100%">
 
-- Status per agent: `●` blocked, `◐` working, `✓` done, `○` idle. A row flashes when its
+- Status per agent: `●` blocked, `◐` working, `✓` done, `○` idle, `?` unknown. A row flashes when its
   agent becomes blocked or done; a collapsed workspace flashes on its agents' behalf.
 - `▍` at the left edge marks the agent in the tab you are looking at, and that workspace's name is
   at full colour; other workspaces are dimmed. The selection bar shows only while the tree has
@@ -36,8 +36,9 @@ doing, which one needs you, and one keypress or click to jump there.
   label shows the session title alone.
 - Panes without an agent are listed too, marked `$`, named after their tab
   (plus their own label or directory when the tab holds several panes). Selecting one
-  focuses it. Counts and the footer cover agents only. `panes = false` (or Other panes
-  in the cog menu) lists agents only.
+  focuses it. A folded workspace's counts cover agents only; the footer counts these
+  panes after the agents. `panes = false` (or Other panes in the cog menu) lists
+  agents only, in the tree and the footer.
 - A folded workspace counts its blocked, working and done agents on its own row.
 - With `git_branch = true` (or Git branch in the cog menu), a workspace row shows its
   git branch at the right when all its agents and panes in a repo are on it; otherwise
@@ -48,8 +49,8 @@ doing, which one needs you, and one keypress or click to jump there.
   shows its counts instead.
 - A tree left as the only pane in its tab closes itself, and herdr closes the tab with it
   (and the workspace, when that was its last tab).
-- The footer counts all agents, and how many are blocked, working or done ("all idle"
-  when every agent is idle). In a narrow pane the total loses its word ("3  ● 1") first.
+- The footer counts the agents in each state and the panes without an agent, with the
+  tree's marks (`$ 2  ○ 4  ◐ 1  ✓ 1`).
 
 ## Requirements
 
