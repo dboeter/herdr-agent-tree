@@ -707,7 +707,16 @@ class GitSlowTest(unittest.TestCase):
     def test_timeout_gives_branch_only_and_backs_off(self):
         info, slow = self.scan("feat/x")
         self.assertEqual(info, {"/r/sub": ("/r", at.GitInfo("feat/x", None))})
-        self.assertGreater(slow["/r"], at.time.monotonic())
+        self.assertGreater(slow[("root", "/r")], at.time.monotonic())
+
+    def test_branch_only_holds_for_a_dir_that_is_the_root(self):
+        # The status backoff for /r must not read as /r failing to find its repo.
+        w = at.GitWatch.__new__(at.GitWatch)
+        slow = {}
+        with mock.patch.object(at, "run_git", self.fake("main")):
+            w._scan({"/r"}, slow)
+            info = w._scan({"/r"}, slow)
+        self.assertEqual(info, {"/r": ("/r", at.GitInfo("main", None))})
 
     def test_detached_falls_back_to_sha(self):
         info, _ = self.scan(None)

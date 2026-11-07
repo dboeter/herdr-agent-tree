@@ -745,7 +745,9 @@ class GitWatch:
             pass
 
     def _run(self):
-        slow = {}  # dir or repo root -> monotonic time until which it is not retried
+        # ("dir", path) or ("root", path) -> monotonic time until which it is not
+        # retried. Kept apart: a repo root is often also a watched directory.
+        slow = {}
         while True:
             want = self._want
             if want:
@@ -763,12 +765,12 @@ class GitWatch:
         status, info, now = {}, {}, time.monotonic()
         for d in want:
             info[d] = None
-            if slow.get(d, 0) > now:
+            if slow.get(("dir", d), 0) > now:
                 continue
             try:
                 root = run_git("rev-parse", "--show-toplevel", cwd=d).strip()
             except subprocess.TimeoutExpired:
-                slow[d] = now + GIT_SLOW
+                slow[("dir", d)] = now + GIT_SLOW
                 continue
             except (OSError, subprocess.SubprocessError):
                 # Not a repo, a deleted directory, or no git on PATH.
@@ -782,12 +784,12 @@ class GitWatch:
     def _status(self, root, slow):
         """Full status, or for a repo too slow for that, its branch with dirty None:
         stale marks would claim more than is known."""
-        if slow.get(root, 0) <= time.monotonic():
+        if slow.get(("root", root), 0) <= time.monotonic():
             try:
                 out = run_git("status", "--porcelain=v2", "--branch", cwd=root)
                 return parse_status(out)
             except subprocess.TimeoutExpired:
-                slow[root] = time.monotonic() + GIT_SLOW
+                slow[("root", root)] = time.monotonic() + GIT_SLOW
             except (OSError, subprocess.SubprocessError):
                 return None
         # Both read a file or two, quick where status is not. symbolic-ref also names
