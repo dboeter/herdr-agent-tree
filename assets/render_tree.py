@@ -146,7 +146,7 @@ for i, (key, kind, item, segs, flex, right) in enumerate(rows):
         at.paint(segs, inner, back, flex, segs[0][1] if here else None, right),
     )
 put(bottom - 2, 1, "─" * inner, at.blend(DIM, BG, 0.5))
-footer = at.paint(at.fit_summary(at.summary(snap), inner - 5), inner - 5)
+footer = at.paint(at.summary(snap), inner - 5)
 put_ansi(bottom - 1, 1, footer + f"\x1b[{at.fg(DIM)}m{at.PLUS}  {at.COG}\x1b[39m ")
 
 L = TREE_W
