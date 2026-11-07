@@ -48,7 +48,7 @@ class SettingsTest(ConfigDir):
         self.write(
             'side = "right"\nauto_dock = false\nauto_dock_min_width = 100\n'
             'workspace_color = "#ff9e64"\nflash = false\nhints = true\n'
-            'panes = false\nagents = ["claude"]\ngit = true\n'
+            'panes = false\nagents = ["claude"]\ngit_branch = true\ngit_marks = true\n'
         )
         s = at.settings()
         self.assertEqual(s.side, "right")
@@ -59,7 +59,8 @@ class SettingsTest(ConfigDir):
         self.assertTrue(s.hints)
         self.assertFalse(s.panes)
         self.assertEqual(s.agents, ("claude",))
-        self.assertTrue(s.git)
+        self.assertTrue(s.git_branch)
+        self.assertTrue(s.git_marks)
 
     def test_wrong_types_keep_defaults(self):
         self.write(
@@ -435,7 +436,8 @@ class ConsistencyTest(unittest.TestCase):
         self.assertEqual(example["hints"], d.hints)
         self.assertEqual(example["panes"], d.panes)
         self.assertEqual(tuple(example["agents"]), d.agents)
-        self.assertEqual(example["git"], d.git)
+        self.assertEqual(example["git_branch"], d.git_branch)
+        self.assertEqual(example["git_marks"], d.git_marks)
         with open(path) as f:
             listed = dict(re.findall(r"(\w+) (#[0-9a-f]{6})", f.read()))
         self.assertEqual(
@@ -488,6 +490,13 @@ class GitTextTest(unittest.TestCase):
         )
         # Status unknown (a slow repo): branch only.
         self.assertEqual(text(at.git_segments(at.GitInfo("main", None))), "main")
+
+    def test_git_segments_branch_or_marks_alone(self):
+        dirty = at.GitInfo("feat/x", True, 2, 1)
+        self.assertEqual(text(at.git_segments(dirty, marks=False)), "f/x")
+        self.assertEqual(text(at.git_segments(dirty, branch=False)), "*↑2↓1")
+        # Marks alone on a clean checkout: nothing to show.
+        self.assertEqual(at.git_segments(at.GitInfo("main", False), branch=False), [])
 
     def test_paint_right_aligns(self):
         line = plain(
@@ -576,6 +585,22 @@ class GitBuildTest(unittest.TestCase):
         self.assertEqual(rows[("ws", "w1")][5], [])
         self.assertEqual(text(rows[("agent", "p1")][5]), "main *↑1")
         self.assertEqual(text(rows[("agent", "p3")][5]), "f/x")
+
+    def test_marks_only_follow_the_same_rows(self):
+        s = git_snap()
+        s["agents"].append(
+            {
+                "pane_id": "p4",
+                "tab_id": "t1",
+                "workspace_id": "w1",
+                "agent_status": "idle",
+                "cwd": "/r",
+            }
+        )
+        rows = {r[0]: r for r in at.build(s, set(), "t1", {}, git=GIT, branch=False)}
+        self.assertEqual(text(rows[("ws", "w1")][5]), "*↑1")
+        # p3's worktree is clean: no marks, so no column.
+        self.assertEqual(rows[("agent", "p3")][5], [])
 
     def test_folded_workspace_keeps_counts_not_git(self):
         rows = {r[0]: r for r in at.build(git_snap(), {"w1"}, "t1", {}, git=GIT)}

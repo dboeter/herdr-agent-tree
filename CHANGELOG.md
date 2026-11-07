@@ -2,11 +2,12 @@
 
 ## Unreleased
 
-- `git = true` (Git branches in the cog menu) shows the git branch most of a
-  workspace's agents and panes are on, right-aligned on its row (`main *↑2`: `*` for
-  uncommitted changes, `↑`/`↓` for commits ahead and behind). One in another repo or
+- `git_branch = true` and `git_marks = true` (Git branch and Git marks in the cog menu)
+  show the git branch most of a workspace's agents and panes are on, right-aligned on
+  its row, and the marks after it (`main *↑2`: `*` for uncommitted changes, `↑`/`↓` for
+  commits ahead and behind). Each works alone. One in another repo or
   worktree shows its own; with no majority, each shows its own.
-  Branch prefixes shorten to a letter (`f/login`). Off by default.
+  Branch prefixes shorten to a letter (`f/login`). Both off by default.
 
 ## 0.4.0 — 2026-11-03
 

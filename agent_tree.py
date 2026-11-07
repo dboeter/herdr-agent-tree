@@ -116,13 +116,15 @@ class Settings:
     # Agent kinds a workspace's right-click menu offers to start in a new tab; each is
     # also the command that starts it.
     agents: tuple = ("claude", "codex")
-    git: bool = False  # branch and dirty marks, right-aligned on workspace rows
+    # Right-aligned git info on rows: the branch, and the * / ↑ / ↓ marks after it.
+    git_branch: bool = False
+    git_marks: bool = False
 
 
 def settings():
     """Settings from config.toml. A key that is missing or of the wrong type keeps its
-    default: only false turns auto_dock, flash or panes off, only true turns hints or
-    git on."""
+    default: only false turns auto_dock, flash or panes off, only true turns hints,
+    git_branch or git_marks on."""
     cfg = config()
     width = cfg.get("auto_dock_min_width")
     agents = cfg.get("agents")
@@ -141,7 +143,8 @@ def settings():
         hints=cfg.get("hints") is True,
         panes=cfg.get("panes") is not False,
         agents=tuple(agents),
-        git=cfg.get("git") is True,
+        git_branch=cfg.get("git_branch") is True,
+        git_marks=cfg.get("git_marks") is True,
     )
 
 
@@ -522,10 +525,21 @@ def members(snap, panes=True):
     return items, agent_panes
 
 
-def build(snap, collapsed, here, colors, default=None, panes=True, git=None):
+def build(
+    snap,
+    collapsed,
+    here,
+    colors,
+    default=None,
+    panes=True,
+    git=None,
+    branch=True,
+    marks=True,
+):
     """Rows as (key, kind, payload, segments, flex, right); segments are (text, colour,
     bold), right is segments drawn flush right. kind is "ws", "agent", or "pane" for a
-    pane with no agent in it; panes=False leaves those out. git is GitWatch.info():
+    pane with no agent in it; panes=False leaves those out. git is GitWatch.info(),
+    shown as its branch and/or marks:
     without it, right is always empty."""
     tabs = {t["tab_id"]: t for t in snap["tabs"]}
     items, agent_panes = members(snap, panes)
@@ -567,7 +581,7 @@ def build(snap, collapsed, here, colors, default=None, panes=True, git=None):
             ),
         ]
         info = next((r[1] for r in repos if r and r[0] == home), None)
-        right = git_segments(info) if info else []
+        right = git_segments(info, branch, marks) if info else []
         if not open_:
             # Counts stand in for the hidden agent rows, so only a folded workspace shows
             # them; they win the row over git, which would not fit beside them.
@@ -606,7 +620,8 @@ def build(snap, collapsed, here, colors, default=None, panes=True, git=None):
                 (label, None, False),
             ]
             # Only a member off the workspace's repo (a worktree, another repo) says so.
-            right = git_segments(repo[1]) if repo and repo[0] != home else []
+            off_home = repo and repo[0] != home
+            right = git_segments(repo[1], branch, marks) if off_home else []
             rows.append(((kind, a["pane_id"]), kind, a, segs, 3, right))
     return rows
 
@@ -666,17 +681,22 @@ def short_branch(name):
     return name if cols(name) <= BRANCH_COLS else clip(name, BRANCH_COLS - 1) + "…"
 
 
-def git_segments(info):
-    """main *↑2↓1: the branch, then a space and the marks, if any."""
-    marks = []
+def git_segments(info, branch=True, marks=True):
+    """main *↑2↓1: the branch, then a space and the marks, if any; branch=False or
+    marks=False leaves that part out."""
+    show, marks = marks, []
     if info.dirty:
         marks.append(("*", DIRTY, False))
     if info.ahead:
         marks.append((f"↑{info.ahead}", DIM, False))
     if info.behind:
         marks.append((f"↓{info.behind}", DIM, False))
-    branch = (short_branch(info.branch), DIM, False)
-    return [branch, (" ", None, False), *marks] if marks else [branch]
+    if not show:
+        marks = []
+    if not branch:
+        return marks
+    name = (short_branch(info.branch), DIM, False)
+    return [name, (" ", None, False), *marks] if marks else [name]
 
 
 def run_git(*args, cwd):
@@ -1109,7 +1129,7 @@ class Tree:
                 save("colors.json", colors)
         focused = snap.get("focused_tab_id") == self.here
         git = None
-        if self.settings.git:
+        if self.settings.git_branch or self.settings.git_marks:
             self.watch = self.watch or GitWatch()
             # Only the focused tree runs git; a hidden one draws its last results.
             self.watch.want(git_dirs(snap, self.settings.panes) if focused else ())
@@ -1124,6 +1144,8 @@ class Tree:
             self.settings.workspace_color,
             self.settings.panes,
             git,
+            self.settings.git_branch,
+            self.settings.git_marks,
         )
         self.footer = summary(snap)
         keys = [r[0] for r in self.rows]
@@ -1346,7 +1368,8 @@ class Tree:
         """The cog menu: each item flips one config.toml setting and reopens the menu,
         so its label shows the new value."""
         s = self.settings
-        hints, flash, panes, auto, git = s.hints, s.flash, s.panes, s.auto_dock, s.git
+        hints, flash, panes, auto = s.hints, s.flash, s.panes, s.auto_dock
+        branch, marks = s.git_branch, s.git_marks
         right = s.side == "right"
         current = s.workspace_color or GROUP
         index = PALETTE.index(current) if current in PALETTE else -1
@@ -1364,7 +1387,11 @@ class Tree:
             (f"Key hints: {'on' if hints else 'off'}", flip("hints", not hints)),
             (f"Flash: {'on' if flash else 'off'}", flip("flash", not flash)),
             (f"Other panes: {'on' if panes else 'off'}", flip("panes", not panes)),
-            (f"Git branches: {'on' if git else 'off'}", flip("git", not git)),
+            (
+                f"Git branch: {'on' if branch else 'off'}",
+                flip("git_branch", not branch),
+            ),
+            (f"Git marks: {'on' if marks else 'off'}", flip("git_marks", not marks)),
             (
                 f"Default colour: {SWATCHES[index][0] if index >= 0 else 'custom'}",
                 flip("workspace_color", "#{:02x}{:02x}{:02x}".format(*PALETTE[nxt])),

@@ -39,9 +39,10 @@ doing, which one needs you, and one keypress or click to jump there.
   focuses it. Counts and the footer cover agents only. `panes = false` (or Other panes
   in the cog menu) lists agents only.
 - A folded workspace counts its blocked, working and done agents on its own row.
-- With `git = true` (or Git branches in the cog menu), a workspace row shows the git
-  branch most of its agents and panes are on, at the right (`main *↑2`: `*` for
-  uncommitted changes, `↑`/`↓` for commits ahead of and behind the upstream). One in
+- With `git_branch = true` (or Git branch in the cog menu), a workspace row shows the
+  git branch most of its agents and panes are on, at the right. `git_marks = true` (Git
+  marks) adds `*` for uncommitted changes and `↑`/`↓` for commits ahead of and behind
+  the upstream (`main *↑2`); either works without the other. One in
   another repo or worktree shows its own; with no majority, each shows its own.
   Prefixes shorten to a letter (`feat/login` shows as `f/login`). A folded workspace
   shows its counts instead.
@@ -122,7 +123,7 @@ is not zoomed. Set `auto_dock = false` to only open trees with the toggle action
 | `r` | Rename the workspace, or the agent's tab (`Enter` saves, `Esc` cancels) |
 | `c` `C` | Cycle the workspace colour |
 | right-click | On an agent: focus, rename tab, fold workspace, cycle colour, close pane. On a workspace: fold/unfold, a new agent from the `New agent ›` submenu (hover, click or `→`), new tab, rename, cycle colour, close workspace. `Esc` or a click elsewhere closes the menu |
-| `s` / click the cog in the footer | Settings menu: key hints, flash, other panes, git branches, default colour, auto-dock, dock side |
+| `s` / click the cog in the footer | Settings menu: key hints, flash, other panes, git branch, git marks, default colour, auto-dock, dock side |
 | `q` | Close the tree and keep this tab free of it |
 | `Ctrl-C` | Quit the tree process only; auto-dock brings it back within about 20 s |
 
@@ -149,12 +150,13 @@ flash = true                 # false stops rows flashing when an agent becomes b
 hints = false                # true shows the tree's keys above the footer
 panes = true                 # false lists agents only, without rows for other panes
 agents = ["claude", "codex"]  # agents a workspace's right-click menu can start in a new tab
-git = false                  # true shows git branches and dirty marks at the right of rows
+git_branch = false           # true shows git branches at the right of rows
+git_marks = false            # true shows * (uncommitted) and ↑/↓ (ahead/behind) there
 ```
 
 [`config.example.toml`](config.example.toml) explains each key, with the palette's
 colours. The cog menu rewrites the file with its keys only, so comments in it are dropped.
-Open trees pick up `workspace_color`, `flash`, `hints`, `panes`, `agents` and `git` within a few seconds (up to 10 s in a hidden tab);
+Open trees pick up `workspace_color`, `flash`, `hints`, `panes`, `agents`, `git_branch` and `git_marks` within a few seconds (up to 10 s in a hidden tab);
 `auto_dock` and `auto_dock_min_width` apply from the next tab switch. `side`
 applies to new trees; to move an open tree, toggle it off and on again.
 
@@ -170,7 +172,7 @@ heartbeat has expired is replaced on the next focus. A restored session brings t
 back without their processes; herdr runs `--startup` once the session is up, which
 closes those in every tab and docks a fresh tree in the focused one.
 
-With `git` on, a thread in the focused tree runs `git status` on the repos of the panes
+With `git_branch` or `git_marks` on, a thread in the focused tree runs `git status` on the repos of the panes
 listed (an agent's starting directory, a plain pane's current one) every 5 s, and the
 tree redraws when a result changes. It never takes git's index lock. A repo whose
 status takes over 2 s, as on a Windows drive under WSL, shows its branch only for a
