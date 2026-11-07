@@ -21,8 +21,10 @@ import os
 import re
 import select
 import socket
+import subprocess
 import sys
 import termios
+import threading
 import time
 import tomllib
 import tty
@@ -114,11 +116,15 @@ class Settings:
     # Agent kinds a workspace's right-click menu offers to start in a new tab; each is
     # also the command that starts it.
     agents: tuple = ("claude", "codex")
+    # Right-aligned git info on rows: the branch, and the * / ↑ / ↓ marks after it.
+    git_branch: bool = False
+    git_marks: bool = False
 
 
 def settings():
     """Settings from config.toml. A key that is missing or of the wrong type keeps its
-    default: only false turns auto_dock, flash or panes off, only true turns hints on."""
+    default: only false turns auto_dock, flash or panes off, only true turns hints,
+    git_branch or git_marks on."""
     cfg = config()
     width = cfg.get("auto_dock_min_width")
     agents = cfg.get("agents")
@@ -137,6 +143,8 @@ def settings():
         hints=cfg.get("hints") is True,
         panes=cfg.get("panes") is not False,
         agents=tuple(agents),
+        git_branch=cfg.get("git_branch") is True,
+        git_marks=cfg.get("git_marks") is True,
     )
 
 
@@ -424,7 +432,7 @@ STATUS = {  # agent_status -> glyph, colour
     "working": ("◐", (224, 175, 104)),
     "done": ("✓", (158, 206, 106)),
     "idle": ("○", (110, 110, 120)),
-    "unknown": ("·", (110, 110, 120)),
+    "unknown": ("?", (110, 110, 120)),
 }
 DIM = (110, 110, 120)
 SHELL = "$"  # a pane with no agent: a prompt, and no arrow to read as a fold caret
@@ -482,10 +490,11 @@ def bg(rgb):
     return f"48;2;{r};{g};{b}"
 
 
-def status_counts(agents, sep):
-    """A segment per state that wants attention, sep before each: e.g. " ● 2"."""
+def status_counts(agents, sep, states=("blocked", "working", "done")):
+    """A segment per state with agents in it, sep before each: e.g. " ● 2". By default
+    the states that want attention."""
     segs = []
-    for status in ("blocked", "working", "done"):
+    for status in states:
         n = sum(a["agent_status"] == status for a in agents)
         if n:
             glyph, colour = STATUS[status]
@@ -505,18 +514,37 @@ def palette(default=None):
     return colours
 
 
-def build(snap, collapsed, here, colors, default=None, panes=True):
-    """Rows as (key, kind, payload, segments, flex); segments are (text, colour, bold).
-    kind is "ws", "agent", or "pane" for a pane with no agent in it; panes=False leaves
-    those out."""
-    tabs = {t["tab_id"]: t for t in snap["tabs"]}
+def members(snap, panes=True):
+    """Every pane but the trees and sidebars, as its agent when it has one; panes=False
+    leaves out those without an agent. Returns (items, pane ids holding an agent)."""
     agent_panes = {a["pane_id"] for a in snap["agents"]}
-    # Every pane but the trees and sidebars, as its agent when it has one.
     items = snap["agents"] + [
         p
         for p in snap["panes"]
         if panes and p["pane_id"] not in agent_panes and not chrome(p)
     ]
+    return items, agent_panes
+
+
+def build(
+    snap,
+    collapsed,
+    here,
+    colors,
+    default=None,
+    panes=True,
+    git=None,
+    branch=True,
+    marks=True,
+):
+    """Rows as (key, kind, payload, segments, flex, right); segments are (text, colour,
+    bold), right is segments drawn flush right. kind is "ws", "agent", or "pane" for a
+    pane with no agent in it; panes=False leaves those out. git is GitWatch.info(),
+    shown as its branch and/or marks:
+    without it, right is always empty."""
+    tabs = {t["tab_id"]: t for t in snap["tabs"]}
+    items, agent_panes = members(snap, panes)
+    git = git or {}
     per_tab = {}
     for a in items:
         per_tab[a["tab_id"]] = per_tab.get(a["tab_id"], 0) + 1
@@ -525,14 +553,19 @@ def build(snap, collapsed, here, colors, default=None, panes=True):
     rows = []
     for w in sorted(snap["workspaces"], key=lambda w: w["number"]):
         wid = w["workspace_id"]
-        members = sorted(
+        mine = sorted(
             (a for a in items if a["workspace_id"] == wid),
             key=lambda a: (
                 tabs.get(a["tab_id"], {}).get("number", 0),
                 order.get(a["pane_id"], 0),
             ),
         )
-        agents = [a for a in members if a["pane_id"] in agent_panes]
+        agents = [a for a in mine if a["pane_id"] in agent_panes]
+        repos = [git.get(git_dir(a, a["pane_id"] in agent_panes)) for a in mine]
+        roots = [r[0] for r in repos if r]
+        # The repo every member in a repo is in (panes outside any repo don't count).
+        # Without one, the workspace row shows none and each member shows its own.
+        home = roots[0] if roots and roots.count(roots[0]) == len(roots) else None
         open_ = wid not in collapsed
         ws_colour = palette(default)[colors.get(wid, 0) % len(PALETTE)]
         # The workspace you are looking at is at full colour; the others are dimmed,
@@ -548,12 +581,17 @@ def build(snap, collapsed, here, colors, default=None, panes=True):
                 False,
             ),
         ]
-        rows.append((("ws", wid), "ws", w, segs, 2))
+        info = next((r[1] for r in repos if r and r[0] == home), None)
+        right = git_segments(info, branch, marks) if info else []
         if not open_:
-            # Counts stand in for the hidden agent rows, so only a folded workspace shows them.
+            # Counts stand in for the hidden agent rows, so only a folded workspace shows
+            # them; they win the row over git, which would not fit beside them.
             segs += status_counts(agents, " ")
+            right = []
+        rows.append((("ws", wid), "ws", w, segs, 2, right))
+        if not open_:
             continue
-        for i, a in enumerate(members):
+        for i, (a, repo) in enumerate(zip(mine, repos)):
             kind = "agent" if a["pane_id"] in agent_panes else "pane"
             tab_label = tabs.get(a["tab_id"], {}).get("label") or ""
             if kind == "agent":
@@ -578,35 +616,219 @@ def build(snap, collapsed, here, colors, default=None, panes=True):
                 # Blank; its colour is the workspace's, which the draw uses for the
                 # you-are-here mark it puts in the pad column (see paint's mark).
                 ("  ", ws_colour, False),
-                ("└ " if i == len(members) - 1 else "├ ", DIM, False),
+                ("└ " if i == len(mine) - 1 else "├ ", DIM, False),
                 (f"{glyph} ", colour, False),
                 (label, None, False),
             ]
-            rows.append(((kind, a["pane_id"]), kind, a, segs, 3))
+            # Only a member off the workspace's repo (a worktree, another repo) says so.
+            off_home = repo and repo[0] != home
+            right = git_segments(repo[1], branch, marks) if off_home else []
+            rows.append(((kind, a["pane_id"]), kind, a, segs, 3, right))
     return rows
 
 
-def summary(snap):
-    """Footer segments: agent total, then a count per state that wants attention.
-    Idle is left out (with everything idle it would just repeat the total), so an
-    all-idle footer says so instead. Agents of unknown status are not idle."""
-    agents = snap["agents"]
-    if not agents:
+# --- git ---------------------------------------------------------------------------
+
+GIT_POLL = 5.0  # seconds between git status runs per repo, in the focused tree only
+GIT_TIMEOUT = 2.0  # git status on a slow filesystem (WSL /mnt/c) can take over a second
+GIT_SLOW = 60.0  # seconds a repo that timed out shows its branch only
+BRANCH_COLS = 14
+DIRTY = (224, 175, 104)  # yellow, as working
+
+
+@dataclasses.dataclass(frozen=True)
+class GitInfo:
+    branch: str  # branch name, or short sha when detached
+    dirty: bool | None  # None: status unknown (the repo is too slow), branch only
+    ahead: int = 0
+    behind: int = 0
+
+
+def git_dir(item, agent):
+    """The directory whose repo a row shows. An agent's foreground_cwd follows whatever
+    command it runs, so it uses cwd, where it started; a plain pane shows where you cd'd."""
+    if agent:
+        return item.get("cwd")
+    return item.get("foreground_cwd") or item.get("cwd")
+
+
+def git_dirs(snap, panes=True):
+    items, agent_panes = members(snap, panes)
+    return {d for a in items if (d := git_dir(a, a["pane_id"] in agent_panes))}
+
+
+def parse_status(text):
+    """`git status --porcelain=v2 --branch` output -> GitInfo."""
+    head = oid = ""
+    ahead = behind = 0
+    dirty = False
+    for line in text.splitlines():
+        if line.startswith("# branch.oid "):
+            oid = line[13:]
+        elif line.startswith("# branch.head "):
+            head = line[14:]
+        elif line.startswith("# branch.ab "):
+            a, b = line[12:].split()
+            ahead, behind = int(a), -int(b)
+        elif line and not line.startswith("#"):
+            dirty = True
+    return GitInfo(oid[:7] if head == "(detached)" else head, dirty, ahead, behind)
+
+
+def short_branch(name):
+    """feat/git-ind -> f/git-ind: every prefix down to its first letter, then clipped."""
+    *prefixes, last = name.split("/")
+    name = "/".join([p[:1] for p in prefixes] + [last])
+    return name if cols(name) <= BRANCH_COLS else clip(name, BRANCH_COLS - 1) + "…"
+
+
+def git_segments(info, branch=True, marks=True):
+    """main *↑2↓1: the branch, then a space and the marks, if any; branch=False or
+    marks=False leaves that part out."""
+    show, marks = marks, []
+    if info.dirty:
+        marks.append(("*", DIRTY, False))
+    if info.ahead:
+        marks.append((f"↑{info.ahead}", DIM, False))
+    if info.behind:
+        marks.append((f"↓{info.behind}", DIM, False))
+    if not show:
+        marks = []
+    if not branch:
+        return marks
+    name = (short_branch(info.branch), DIM, False)
+    return [name, (" ", None, False), *marks] if marks else [name]
+
+
+def run_git(*args, cwd):
+    return subprocess.run(
+        ["git", "--no-optional-locks", "-C", cwd, *args],
+        capture_output=True,
+        # Not the tree's terminal: a hook git runs (core.fsmonitor) would eat keystrokes.
+        stdin=subprocess.DEVNULL,
+        text=True,
+        timeout=GIT_TIMEOUT,
+        check=True,
+    ).stdout
+
+
+class GitWatch:
+    """Repo info for directories, computed on a thread so a slow repo never stalls the
+    tree. want() names the directories; results show in info() later, and fd turns
+    readable when they change."""
+
+    def __init__(self, poll=GIT_POLL):
+        self.poll = poll
+        self.fd, self._pipe = os.pipe()
+        os.set_blocking(self.fd, False)
+        os.set_blocking(self._pipe, False)
+        self._want = frozenset()
+        self._info = {}
+        self._wake = threading.Event()
+        threading.Thread(target=self._run, daemon=True).start()
+
+    def want(self, dirs):
+        """Replace the directories to watch; an empty set idles the thread."""
+        dirs = frozenset(dirs)
+        if dirs != self._want:
+            self._want = dirs
+            self._wake.set()
+
+    def info(self):
+        """dir -> (repo root, GitInfo), or None outside a repo; absent until computed.
+        The thread replaces this dict whole and never mutates it."""
+        return self._info
+
+    def drain(self):
+        try:
+            os.read(self.fd, 4096)
+        except BlockingIOError:
+            pass
+
+    def _run(self):
+        # ("dir", path) or ("root", path) -> monotonic time until which it is not
+        # retried. Kept apart: a repo root is often also a watched directory.
+        slow = {}
+        while True:
+            want = self._want
+            if want:
+                info = self._scan(want, slow)
+                if info != self._info:
+                    self._info = info
+                    try:
+                        os.write(self._pipe, b".")
+                    except BlockingIOError:  # unread wakes already pending
+                        pass
+            self._wake.wait(self.poll if want else None)
+            self._wake.clear()
+
+    def _scan(self, want, slow):
+        status, info, now = {}, {}, time.monotonic()
+        for d in want:
+            info[d] = None
+            if slow.get(("dir", d), 0) > now:
+                continue
+            try:
+                root = run_git("rev-parse", "--show-toplevel", cwd=d).strip()
+            except subprocess.TimeoutExpired:
+                slow[("dir", d)] = now + GIT_SLOW
+                continue
+            except (OSError, subprocess.SubprocessError):
+                # Not a repo, a deleted directory, or no git on PATH.
+                continue
+            if root not in status:
+                status[root] = self._status(root, slow)
+            if status[root]:
+                info[d] = (root, status[root])
+        return info
+
+    def _status(self, root, slow):
+        """Full status, or for a repo too slow for that, its branch with dirty None:
+        stale marks would claim more than is known."""
+        if slow.get(("root", root), 0) <= time.monotonic():
+            try:
+                out = run_git("status", "--porcelain=v2", "--branch", cwd=root)
+                return parse_status(out)
+            except subprocess.TimeoutExpired:
+                slow[("root", root)] = time.monotonic() + GIT_SLOW
+            except (OSError, subprocess.SubprocessError):
+                return None
+        # Both read a file or two, quick where status is not. symbolic-ref also names
+        # a branch without commits yet; it fails when detached, where the sha stands in.
+        for args in (
+            ("symbolic-ref", "-q", "--short", "HEAD"),
+            ("rev-parse", "--short=7", "HEAD"),
+        ):
+            try:
+                return GitInfo(run_git(*args, cwd=root).strip(), None)
+            except (OSError, subprocess.SubprocessError):
+                pass
+        return None
+
+
+def summary(snap, panes=True):
+    """Footer segments with the tree's glyphs: the panes without an agent ($), then a
+    count per agent state, calm to urgent and unknown last; panes=False leaves the
+    panes out, as the tree does."""
+    items, agent_panes = members(snap, panes)
+    others = sum(a["pane_id"] not in agent_panes for a in items)
+    segs = [(f"  {SHELL} {others}", DIM, False)] if others else []
+    # A status the tree has no glyph for draws as unknown in its row; count it so too.
+    agents = [
+        {
+            "agent_status": a["agent_status"]
+            if a["agent_status"] in STATUS
+            else "unknown"
+        }
+        for a in snap["agents"]
+    ]
+    segs += status_counts(
+        agents, "  ", ("idle", "working", "blocked", "done", "unknown")
+    )
+    if not segs:
         return [("no agents", DIM, False)]
-    segs = [(f"{len(agents)} agent{'' if len(agents) == 1 else 's'}", DIM, False)]
-    segs += status_counts(agents, "  ")
-    if all(a["agent_status"] == "idle" for a in agents):
-        segs.append((" · idle" if len(agents) == 1 else " · all idle", DIM, False))
-    return segs
-
-
-def fit_summary(segs, width):
-    """summary() for a footer of width columns (PAD included): when it doesn't fit, the
-    total drops its word ("2 agents" -> "2") so the state counts after it stay visible."""
-    if len(segs) > 1 and PAD + sum(cols(t) for t, _, _ in segs) > width:
-        text, colour, bold = segs[0]
-        segs = [(text.split(" ", 1)[0], colour, bold)] + segs[1:]
-    return segs
+    text, colour, bold = segs[0]
+    return [(text.lstrip(), colour, bold)] + segs[1:]
 
 
 def hint_lines(width):
@@ -666,9 +888,11 @@ def clip(text, n):
     return text
 
 
-def paint(segs, width, back=None, flex=None, mark=None):
+def paint(segs, width, back=None, flex=None, mark=None, right=()):
     """flex: index of the segment that gives up columns when the row is too wide.
-    mark: colour of a ▍ drawn in the pad column, flush with the pane's left edge."""
+    mark: colour of a ▍ drawn in the pad column, flush with the pane's left edge.
+    right: segments flush right, a pad column from the edge as on the left; the flex
+    segment gives way to them, and they are left out when even that is not enough."""
     # Every line goes through here, so padding here keeps all rows aligned; the pad
     # sits inside the row background so a selected row stays one solid bar.
     # The you-are-here mark is an accent stripe at the edge, not an arrow: an arrow
@@ -676,6 +900,15 @@ def paint(segs, width, back=None, flex=None, mark=None):
     lead = ("▍" + " " * (PAD - 1), mark, False) if mark else (" " * PAD, None, False)
     segs, width = [lead] + segs, max(PAD + 1, width)
     flex = None if flex is None else flex + 1
+    if right:
+        # One column of gap before right, and the flex segment keeps "x…" at least.
+        need = sum(cols(t) for t, _, _ in right) + 1 + PAD
+        fixed = sum(cols(t) for i, (t, _, _) in enumerate(segs) if i != flex)
+        least = min(2, cols(segs[flex][0])) if flex is not None else 0
+        if fixed + least + need <= width:
+            width -= need
+        else:
+            right = ()
     over = sum(cols(t) for t, _, _ in segs) - width
     if flex is not None and over > 0:
         text, colour, bold = segs[flex]
@@ -691,6 +924,15 @@ def paint(segs, width, back=None, flex=None, mark=None):
         # Reset with 22/39 rather than 0 so a selected row keeps its background.
         out.append(f"\x1b[{';'.join(sgr)}m{text}\x1b[22;39m" if sgr else text)
     line = "".join(out) + " " * (width - used)
+    if right:
+        line += (
+            " "
+            + "".join(
+                f"\x1b[{fg(colour)}m{text}\x1b[39m" if colour else text
+                for text, colour, _ in right
+            )
+            + " " * PAD
+        )
     if back:
         return f"\x1b[{bg(back)}m{line}\x1b[49m"
     return line
@@ -843,6 +1085,7 @@ class Tree:
         self.motion = False  # whether the terminal reports mouse motion (?1003h)
         self.settings = Settings()  # config.toml at the last refresh
         self.refused = False  # herdr refused to close this tree when it was left alone
+        self.watch = None  # a GitWatch once git is on
 
     def refresh(self):
         snap = snapshot()
@@ -891,6 +1134,15 @@ class Tree:
             if any(w not in live for w in colors):
                 colors = {w: i for w, i in colors.items() if w in live}
                 save("colors.json", colors)
+        focused = snap.get("focused_tab_id") == self.here
+        git = None
+        if self.settings.git_branch or self.settings.git_marks:
+            self.watch = self.watch or GitWatch()
+            # Only the focused tree runs git; a hidden one draws its last results.
+            self.watch.want(git_dirs(snap, self.settings.panes) if focused else ())
+            git = self.watch.info()
+        elif self.watch:
+            self.watch.want(())
         self.rows = build(
             snap,
             set(collapsed),
@@ -898,10 +1150,12 @@ class Tree:
             colors,
             self.settings.workspace_color,
             self.settings.panes,
+            git,
+            self.settings.git_branch,
+            self.settings.git_marks,
         )
-        self.footer = summary(snap)
+        self.footer = summary(snap, self.settings.panes)
         keys = [r[0] for r in self.rows]
-        focused = snap.get("focused_tab_id") == self.here
         self.active = self.me is not None and snap.get("focused_pane_id") == self.me
         if focused and not self.focused:
             # Every tab runs its own tree with its own cursor, so on arrival the cursor
@@ -953,7 +1207,7 @@ class Tree:
     def activate(self):
         if not self.rows:
             return
-        _, kind, item, _, _ = self.rows[self.cursor]
+        _, kind, item, *_ = self.rows[self.cursor]
         if kind == "ws":
             wid = item["workspace_id"]
             self.set_collapsed(wid, wid not in set(load("collapsed.json", [])))
@@ -967,7 +1221,7 @@ class Tree:
     def left(self):
         if not self.rows:
             return
-        _, kind, item, _, _ = self.rows[self.cursor]
+        _, kind, item, *_ = self.rows[self.cursor]
         if kind == "ws":
             self.set_collapsed(item["workspace_id"], True)
         else:
@@ -1047,7 +1301,7 @@ class Tree:
         """What renaming the selected row renames: ("ws", workspace_id) or ("tab", tab_id)."""
         if not self.rows:
             return None
-        _, kind, item, _, _ = self.rows[self.cursor]
+        _, kind, item, *_ = self.rows[self.cursor]
         if kind == "ws":
             return ("ws", item["workspace_id"])
         return ("tab", item["tab_id"])
@@ -1089,7 +1343,7 @@ class Tree:
     def open_menu(self):
         if not self.rows:
             return
-        _, kind, item, _, _ = self.rows[self.cursor]
+        _, kind, item, *_ = self.rows[self.cursor]
         if kind == "ws":
             wid = item["workspace_id"]
             shut = wid in set(load("collapsed.json", []))
@@ -1122,6 +1376,7 @@ class Tree:
         so its label shows the new value."""
         s = self.settings
         hints, flash, panes, auto = s.hints, s.flash, s.panes, s.auto_dock
+        branch, marks = s.git_branch, s.git_marks
         right = s.side == "right"
         current = s.workspace_color or GROUP
         index = PALETTE.index(current) if current in PALETTE else -1
@@ -1139,6 +1394,11 @@ class Tree:
             (f"Key hints: {'on' if hints else 'off'}", flip("hints", not hints)),
             (f"Flash: {'on' if flash else 'off'}", flip("flash", not flash)),
             (f"Other panes: {'on' if panes else 'off'}", flip("panes", not panes)),
+            (
+                f"Git branch: {'on' if branch else 'off'}",
+                flip("git_branch", not branch),
+            ),
+            (f"Git marks: {'on' if marks else 'off'}", flip("git_marks", not marks)),
             (
                 f"Default colour: {SWATCHES[index][0] if index >= 0 else 'custom'}",
                 flip("workspace_color", "#{:02x}{:02x}{:02x}".format(*PALETTE[nxt])),
@@ -1362,7 +1622,7 @@ class Tree:
             if key not in lit or start > lit[key][0]:
                 lit[key] = (start, colour)
         lines = []
-        for i, (key, kind, item, segs, flex) in enumerate(
+        for i, (key, kind, item, segs, flex, right) in enumerate(
             self.rows[self.top : self.top + body]
         ):
             selected = self.top + i == self.cursor
@@ -1387,8 +1647,9 @@ class Tree:
                 typed = self.edit[2].decode("utf-8", "ignore")
                 while cols(typed) > room:
                     typed = typed[1:]
-                segs, flex = lead + [(typed + "▏", None, True)], None
-            lines.append(paint(segs, width, back, flex, segs[0][1] if here else None))
+                segs, flex, right = lead + [(typed + "▏", None, True)], None, ()
+            mark = segs[0][1] if here else None
+            lines.append(paint(segs, width, back, flex, mark, right))
         if not self.rows:
             lines = [paint([("no workspaces", DIM, False)], width)]
         frame = "\x1b[H" + "\r\n".join(lines) + "\x1b[J"
@@ -1405,8 +1666,7 @@ class Tree:
             # Fonts draw the icons two cells wide, spilling into the space after each;
             # the plus gets two spaces so it sits clear of the cog.
             icons = f"\x1b[{fg(DIM)}m{PLUS}  {COG}\x1b[39m "
-            footer = fit_summary(self.footer, width - 5)
-            frame += f"\x1b[{height};1H" + paint(footer, width - 5) + icons
+            frame += f"\x1b[{height};1H" + paint(self.footer, width - 5) + icons
         if self.menu:
             frame += self.draw_menu(width, body, height)
         # Motion reports only while a menu is open, for hover; otherwise every mouse move
@@ -1483,7 +1743,10 @@ class Tree:
             except (OSError, RuntimeError, ValueError):
                 pass
             height = self.draw(out)
-            watch = [fd] + ([events] if events else [])
+            git = self.watch.fd if self.watch else None
+            watch = (
+                [fd] + ([events] if events else []) + ([git] if git is not None else [])
+            )
             # Redraw at ~20fps while a flash is fading, else idle at 4. A held flash
             # doesn't change, but wake when its fade is due so the fade starts on time.
             wait, now = 0.25, time.monotonic()
@@ -1506,6 +1769,10 @@ class Tree:
                         self.key_in(m.group(0), height)
                     except (OSError, RuntimeError, ValueError):
                         pass
+            if git in ready:
+                # New git results: rebuild the rows on the next pass.
+                self.watch.drain()
+                dirty = True
             if events in ready:
                 try:
                     chunk = events.recv(1 << 16)
