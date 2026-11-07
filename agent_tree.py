@@ -720,7 +720,7 @@ class GitWatch:
             pass
 
     def _run(self):
-        slow = {}  # root -> monotonic time until which it shows its branch only
+        slow = {}  # dir or repo root -> monotonic time until which it is not retried
         while True:
             want = self._want
             if want:
@@ -735,39 +735,47 @@ class GitWatch:
             self._wake.clear()
 
     def _scan(self, want, slow):
-        old = {v[0]: v[1] for v in self._info.values() if v}
-        status, info = {}, {}
+        status, info, now = {}, {}, time.monotonic()
         for d in want:
+            info[d] = None
+            if slow.get(d, 0) > now:
+                continue
             try:
                 root = run_git("rev-parse", "--show-toplevel", cwd=d).strip()
+            except subprocess.TimeoutExpired:
+                slow[d] = now + GIT_SLOW
+                continue
             except (OSError, subprocess.SubprocessError):
                 # Not a repo, a deleted directory, or no git on PATH.
-                info[d] = None
                 continue
             if root not in status:
-                status[root] = self._status(root, old.get(root), slow)
-            info[d] = (root, status[root]) if status[root] else None
+                status[root] = self._status(root, slow)
+            if status[root]:
+                info[d] = (root, status[root])
         return info
 
-    def _status(self, root, old, slow):
-        if slow.get(root, 0) > time.monotonic():
-            return old
-        try:
-            return parse_status(
-                run_git("status", "--porcelain=v2", "--branch", cwd=root)
-            )
-        except subprocess.TimeoutExpired:
-            slow[root] = time.monotonic() + GIT_SLOW
-        except (OSError, subprocess.SubprocessError):
-            return None
-        if old:
-            return old
-        try:  # reads one file, quick where status is not
-            return GitInfo(
-                run_git("rev-parse", "--abbrev-ref", "HEAD", cwd=root).strip(), None
-            )
-        except (OSError, subprocess.SubprocessError):
-            return None
+    def _status(self, root, slow):
+        """Full status, or for a repo too slow for that, its branch with dirty None:
+        stale marks would claim more than is known."""
+        if slow.get(root, 0) <= time.monotonic():
+            try:
+                out = run_git("status", "--porcelain=v2", "--branch", cwd=root)
+                return parse_status(out)
+            except subprocess.TimeoutExpired:
+                slow[root] = time.monotonic() + GIT_SLOW
+            except (OSError, subprocess.SubprocessError):
+                return None
+        # Both read a file or two, quick where status is not. symbolic-ref also names
+        # a branch without commits yet; it fails when detached, where the sha stands in.
+        for args in (
+            ("symbolic-ref", "-q", "--short", "HEAD"),
+            ("rev-parse", "--short=7", "HEAD"),
+        ):
+            try:
+                return GitInfo(run_git(*args, cwd=root).strip(), None)
+            except (OSError, subprocess.SubprocessError):
+                pass
+        return None
 
 
 def summary(snap):
@@ -1167,7 +1175,7 @@ class Tree:
     def activate(self):
         if not self.rows:
             return
-        _, kind, item, _, _ = self.rows[self.cursor]
+        _, kind, item, *_ = self.rows[self.cursor]
         if kind == "ws":
             wid = item["workspace_id"]
             self.set_collapsed(wid, wid not in set(load("collapsed.json", [])))
@@ -1181,7 +1189,7 @@ class Tree:
     def left(self):
         if not self.rows:
             return
-        _, kind, item, _, _ = self.rows[self.cursor]
+        _, kind, item, *_ = self.rows[self.cursor]
         if kind == "ws":
             self.set_collapsed(item["workspace_id"], True)
         else:
@@ -1261,7 +1269,7 @@ class Tree:
         """What renaming the selected row renames: ("ws", workspace_id) or ("tab", tab_id)."""
         if not self.rows:
             return None
-        _, kind, item, _, _ = self.rows[self.cursor]
+        _, kind, item, *_ = self.rows[self.cursor]
         if kind == "ws":
             return ("ws", item["workspace_id"])
         return ("tab", item["tab_id"])
@@ -1303,7 +1311,7 @@ class Tree:
     def open_menu(self):
         if not self.rows:
             return
-        _, kind, item, _, _ = self.rows[self.cursor]
+        _, kind, item, *_ = self.rows[self.cursor]
         if kind == "ws":
             wid = item["workspace_id"]
             shut = wid in set(load("collapsed.json", []))
@@ -1700,7 +1708,9 @@ class Tree:
                 pass
             height = self.draw(out)
             git = self.watch.fd if self.watch else None
-            watch = [fd] + ([events] if events else []) + ([git] if git else [])
+            watch = (
+                [fd] + ([events] if events else []) + ([git] if git is not None else [])
+            )
             # Redraw at ~20fps while a flash is fading, else idle at 4. A held flash
             # doesn't change, but wake when its fade is due so the fade starts on time.
             wait, now = 0.25, time.monotonic()

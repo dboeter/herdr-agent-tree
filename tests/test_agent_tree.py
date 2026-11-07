@@ -622,5 +622,71 @@ class GitWatchTest(unittest.TestCase):
         self.wait(lambda i: i.get(sub) and i[sub][1].dirty)
 
 
+class RowActionTest(unittest.TestCase):
+    """Tree methods that read the selected row, on rows straight from build()."""
+
+    def test_methods_read_build_rows(self):
+        t = at.Tree()
+        t.rows = at.build(snap(), set(), "t1", {})
+        t.cursor = 0
+        self.assertEqual(t.edit_target(), ("ws", "w1"))
+        t.cursor = 1
+        self.assertEqual(t.edit_target(), ("tab", "t1"))
+        with mock.patch.object(at, "call") as call:
+            t.activate()
+            t.open_menu()
+        call.assert_called()
+        self.assertIsNotNone(t.menu)
+        with mock.patch.object(t, "move") as move:
+            t.left()
+        move.assert_called_with(0)
+
+
+class GitSlowTest(unittest.TestCase):
+    """A repo whose status times out shows its branch only, never stale marks."""
+
+    def fake(self, head=None):
+        def run_git(*args, cwd):
+            if args[0] == "rev-parse" and args[1] == "--show-toplevel":
+                return "/r\n"
+            if args[0] == "status":
+                raise subprocess.TimeoutExpired("git", 2)
+            if args[0] == "symbolic-ref" and head:
+                return head + "\n"
+            if args[0] == "rev-parse":
+                return "abc1234\n"
+            raise subprocess.CalledProcessError(1, "git")
+
+        return run_git
+
+    def scan(self, head):
+        w = at.GitWatch.__new__(at.GitWatch)
+        slow = {}
+        with mock.patch.object(at, "run_git", self.fake(head)):
+            return w._scan({"/r/sub"}, slow), slow
+
+    def test_timeout_gives_branch_only_and_backs_off(self):
+        info, slow = self.scan("feat/x")
+        self.assertEqual(info, {"/r/sub": ("/r", at.GitInfo("feat/x", None))})
+        self.assertGreater(slow["/r"], at.time.monotonic())
+
+    def test_detached_falls_back_to_sha(self):
+        info, _ = self.scan(None)
+        self.assertEqual(info["/r/sub"][1].branch, "abc1234")
+
+    def test_slow_toplevel_is_not_retried(self):
+        w = at.GitWatch.__new__(at.GitWatch)
+        slow, calls = {}, []
+
+        def run_git(*args, cwd):
+            calls.append(args)
+            raise subprocess.TimeoutExpired("git", 2)
+
+        with mock.patch.object(at, "run_git", run_git):
+            self.assertEqual(w._scan({"/d"}, slow), {"/d": None})
+            w._scan({"/d"}, slow)
+        self.assertEqual(len(calls), 1)
+
+
 if __name__ == "__main__":
     unittest.main()
