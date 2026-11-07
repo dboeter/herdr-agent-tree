@@ -432,7 +432,7 @@ STATUS = {  # agent_status -> glyph, colour
     "working": ("◐", (224, 175, 104)),
     "done": ("✓", (158, 206, 106)),
     "idle": ("○", (110, 110, 120)),
-    "unknown": ("·", (110, 110, 120)),
+    "unknown": ("?", (110, 110, 120)),
 }
 DIM = (110, 110, 120)
 SHELL = "$"  # a pane with no agent: a prompt, and no arrow to read as a fold caret
@@ -805,14 +805,24 @@ class GitWatch:
 
 
 def summary(snap, panes=True):
-    """Footer segments: a count per agent state with the tree's glyphs, then the panes
-    without an agent ($); panes=False leaves those out, as the tree does."""
-    states = ("blocked", "working", "done", "idle", "unknown")
-    segs = status_counts(snap["agents"], "  ", states)
+    """Footer segments with the tree's glyphs: the panes without an agent ($), then a
+    count per agent state, calm to urgent and unknown last; panes=False leaves the
+    panes out, as the tree does."""
     items, agent_panes = members(snap, panes)
     others = sum(a["pane_id"] not in agent_panes for a in items)
-    if others:
-        segs.append((f"  {SHELL} {others}", DIM, False))
+    segs = [(f"  {SHELL} {others}", DIM, False)] if others else []
+    # A status the tree has no glyph for draws as unknown in its row; count it so too.
+    agents = [
+        {
+            "agent_status": a["agent_status"]
+            if a["agent_status"] in STATUS
+            else "unknown"
+        }
+        for a in snap["agents"]
+    ]
+    segs += status_counts(
+        agents, "  ", ("idle", "working", "blocked", "done", "unknown")
+    )
     if not segs:
         return [("no agents", DIM, False)]
     text, colour, bold = segs[0]

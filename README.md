@@ -26,7 +26,7 @@ doing, which one needs you, and one keypress or click to jump there.
 
 <img src="assets/tree.png" alt="Agent Tree docked left of a Claude session: four workspaces with their agents and status marks, two of them folded to their counts, and the footer totals" width="100%">
 
-- Status per agent: `●` blocked, `◐` working, `✓` done, `○` idle. A row flashes when its
+- Status per agent: `●` blocked, `◐` working, `✓` done, `○` idle, `?` unknown. A row flashes when its
   agent becomes blocked or done; a collapsed workspace flashes on its agents' behalf.
 - `▍` at the left edge marks the agent in the tab you are looking at, and that workspace's name is
   at full colour; other workspaces are dimmed. The selection bar shows only while the tree has
@@ -50,7 +50,7 @@ doing, which one needs you, and one keypress or click to jump there.
 - A tree left as the only pane in its tab closes itself, and herdr closes the tab with it
   (and the workspace, when that was its last tab).
 - The footer counts the agents in each state and the panes without an agent, with the
-  tree's marks (`◐ 1  ✓ 1  ○ 4  $ 2`).
+  tree's marks (`$ 2  ○ 4  ◐ 1  ✓ 1`).
 
 ## Requirements
 

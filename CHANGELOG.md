@@ -9,8 +9,9 @@
   worktree shows its own; with no majority, each shows its own.
   Branch prefixes shorten to a letter (`f/login`). Both off by default.
 - The footer counts agents per state, idle included, and panes without an agent, with
-  the tree's marks (`◐ 1  ✓ 1  ○ 4  $ 2`), instead of an agent total and "all idle".
-  `panes = false` leaves the pane count out.
+  the tree's marks (`$ 2  ○ 4  ◐ 1  ● 1  ✓ 1  ? 1`), instead of an agent total and
+  "all idle". `panes = false` leaves the pane count out.
+- An agent of unknown status is marked `?` (was `·`).
 
 ## 0.4.0 — 2026-11-03
 

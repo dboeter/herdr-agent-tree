@@ -311,14 +311,14 @@ def with_panes(s):
 
 class SummaryTest(unittest.TestCase):
     def test_counts(self):
-        self.assertEqual(text(at.summary(snap())), "● 1  ◐ 1")
+        self.assertEqual(text(at.summary(snap())), "◐ 1  ● 1")
 
     def test_idle_and_panes_use_the_tree_icons(self):
         s = with_panes(snap())
         s["agents"][1]["agent_status"] = "idle"
-        self.assertEqual(text(at.summary(s)), f"● 1  ○ 1  {at.SHELL} 2")
+        self.assertEqual(text(at.summary(s)), f"{at.SHELL} 2  ○ 1  ● 1")
         # panes = false lists agents only, in the tree and in the footer.
-        self.assertEqual(text(at.summary(s, panes=False)), "● 1  ○ 1")
+        self.assertEqual(text(at.summary(s, panes=False)), "○ 1  ● 1")
 
     def test_idle_and_empty(self):
         idle = snap()
@@ -334,7 +334,10 @@ class SummaryTest(unittest.TestCase):
         for a in s["agents"]:
             a["agent_status"] = "idle"
         s["agents"][0]["agent_status"] = "unknown"
-        self.assertEqual(text(at.summary(s)), "○ 1  · 1")
+        self.assertEqual(text(at.summary(s)), "○ 1  ? 1")
+        # A status herdr adds later is unknown to the tree, and counts as such.
+        s["agents"][1]["agent_status"] = "thinking"
+        self.assertEqual(text(at.summary(s)), "? 2")
 
 
 class TextTest(unittest.TestCase):
