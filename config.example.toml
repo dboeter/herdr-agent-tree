@@ -41,3 +41,12 @@ panes = true
 # Agents a workspace's right-click menu offers to start, each in a new tab of that
 # workspace ("New claude agent", ...). Each name is the command that starts the agent.
 agents = ["claude", "codex"]
+
+# git_branch: the git branch at the right of a workspace row, when all its agents and
+# panes in a repo are on it; otherwise each of them shows its own. Panes outside any
+# repo show nothing and don't count. Prefixes shorten to a letter (feat/login: f/login).
+# git_marks: * for uncommitted changes and ↑/↓ for commits ahead of and behind the
+# upstream, on the same rows (after the branch when both are on). Either works alone.
+# Only the focused tree runs git, every few seconds, and only while either is on.
+git_branch = false
+git_marks = false

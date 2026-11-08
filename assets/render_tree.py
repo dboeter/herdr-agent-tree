@@ -137,14 +137,16 @@ put(0, COLS - len(right), right, DIM)
 top, bottom = 1, ROWS - 1
 box(top, 0, bottom, TREE_W - 1, GREY)
 inner = TREE_W - 2
-for i, (key, kind, item, segs, flex) in enumerate(rows):
+for i, (key, kind, item, segs, flex, right) in enumerate(rows):
     here = kind != "ws" and item["tab_id"] == "t1"
     back = at.blend(at.BASE_BG, segs[0][1], at.HERE_TINT) if here else None
     put_ansi(
-        top + 1 + i, 1, at.paint(segs, inner, back, flex, segs[0][1] if here else None)
+        top + 1 + i,
+        1,
+        at.paint(segs, inner, back, flex, segs[0][1] if here else None, right),
     )
 put(bottom - 2, 1, "─" * inner, at.blend(DIM, BG, 0.5))
-footer = at.paint(at.fit_summary(at.summary(snap), inner - 5), inner - 5)
+footer = at.paint(at.summary(snap), inner - 5)
 put_ansi(bottom - 1, 1, footer + f"\x1b[{at.fg(DIM)}m{at.PLUS}  {at.COG}\x1b[39m ")
 
 L = TREE_W

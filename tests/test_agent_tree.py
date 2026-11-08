@@ -5,6 +5,8 @@ Run from the repository root: python3 -m unittest discover -s tests
 
 import os
 import re
+import shutil
+import subprocess
 import sys
 import tempfile
 import tomllib
@@ -46,7 +48,7 @@ class SettingsTest(ConfigDir):
         self.write(
             'side = "right"\nauto_dock = false\nauto_dock_min_width = 100\n'
             'workspace_color = "#ff9e64"\nflash = false\nhints = true\n'
-            'panes = false\nagents = ["claude"]\n'
+            'panes = false\nagents = ["claude"]\ngit_branch = true\ngit_marks = true\n'
         )
         s = at.settings()
         self.assertEqual(s.side, "right")
@@ -57,6 +59,8 @@ class SettingsTest(ConfigDir):
         self.assertTrue(s.hints)
         self.assertFalse(s.panes)
         self.assertEqual(s.agents, ("claude",))
+        self.assertTrue(s.git_branch)
+        self.assertTrue(s.git_marks)
 
     def test_wrong_types_keep_defaults(self):
         self.write(
@@ -290,31 +294,50 @@ class AutoCloseTest(ConfigDir):
         self.assertEqual(closes, ["tree", "tree"])
 
 
+def with_panes(s):
+    """Two plain panes beside the agents, and a tree, which is not counted."""
+    s["panes"] += [
+        {"pane_id": "p4", "tab_id": "t1", "workspace_id": "w1", "cwd": "/a"},
+        {"pane_id": "p5", "tab_id": "t2", "workspace_id": "w2", "cwd": "/b"},
+        {
+            "pane_id": "p6",
+            "tab_id": "t1",
+            "workspace_id": "w1",
+            "tokens": {at.TOKEN: "1"},
+        },
+    ]
+    return s
+
+
 class SummaryTest(unittest.TestCase):
     def test_counts(self):
-        self.assertEqual(text(at.summary(snap())), "2 agents  ● 1  ◐ 1")
+        self.assertEqual(text(at.summary(snap())), "◐ 1  ● 1")
+
+    def test_idle_and_panes_use_the_tree_icons(self):
+        s = with_panes(snap())
+        s["agents"][1]["agent_status"] = "idle"
+        self.assertEqual(text(at.summary(s)), f"{at.SHELL} 2  ○ 1  ● 1")
+        # panes = false lists agents only, in the tree and in the footer.
+        self.assertEqual(text(at.summary(s, panes=False)), "○ 1  ● 1")
 
     def test_idle_and_empty(self):
         idle = snap()
         for a in idle["agents"]:
             a["agent_status"] = "idle"
-        self.assertEqual(text(at.summary(idle)), "2 agents · all idle")
-        self.assertEqual(text(at.summary(snap(agents=[]))), "no agents")
+        self.assertEqual(text(at.summary(idle)), "○ 2")
+        self.assertEqual(text(at.summary(snap(agents=[], panes=[]))), "no agents")
+        panes_only = with_panes(snap(agents=[]))
+        self.assertEqual(text(at.summary(panes_only)), f"{at.SHELL} 4")
 
-    def test_unknown_is_not_idle(self):
+    def test_unknown_has_its_own_mark(self):
         s = snap()
         for a in s["agents"]:
             a["agent_status"] = "idle"
         s["agents"][0]["agent_status"] = "unknown"
-        self.assertEqual(text(at.summary(s)), "2 agents")
-
-    def test_narrow_drops_the_word_not_the_states(self):
-        segs = at.summary(snap())
-        wide = at.PAD + at.cols(text(segs))
-        self.assertEqual(text(at.fit_summary(segs, wide)), "2 agents  ● 1  ◐ 1")
-        self.assertEqual(text(at.fit_summary(segs, wide - 1)), "2  ● 1  ◐ 1")
-        empty = at.summary(snap(agents=[]))
-        self.assertEqual(text(at.fit_summary(empty, 3)), "no agents")
+        self.assertEqual(text(at.summary(s)), "○ 1  ? 1")
+        # A status herdr adds later is unknown to the tree, and counts as such.
+        s["agents"][1]["agent_status"] = "thinking"
+        self.assertEqual(text(at.summary(s)), "? 2")
 
 
 class TextTest(unittest.TestCase):
@@ -432,11 +455,304 @@ class ConsistencyTest(unittest.TestCase):
         self.assertEqual(example["hints"], d.hints)
         self.assertEqual(example["panes"], d.panes)
         self.assertEqual(tuple(example["agents"]), d.agents)
+        self.assertEqual(example["git_branch"], d.git_branch)
+        self.assertEqual(example["git_marks"], d.git_marks)
         with open(path) as f:
             listed = dict(re.findall(r"(\w+) (#[0-9a-f]{6})", f.read()))
         self.assertEqual(
             {name: at.hex_rgb(h) for name, h in listed.items()}, dict(at.SWATCHES)
         )
+
+
+def plain(line):
+    return re.sub(r"\x1b\[[0-9;]*m", "", line)
+
+
+class GitTextTest(unittest.TestCase):
+    def test_parse_clean_in_sync(self):
+        g = at.parse_status(
+            "# branch.oid abcdef1234\n# branch.head main\n"
+            "# branch.upstream origin/main\n# branch.ab +0 -0\n"
+        )
+        self.assertEqual(g, at.GitInfo("main", False, 0, 0))
+
+    def test_parse_dirty_ahead_behind(self):
+        g = at.parse_status(
+            "# branch.oid abcdef1234\n# branch.head feat/x\n# branch.ab +2 -1\n"
+            "1 .M N... 100644 100644 100644 a b file.py\n"
+        )
+        self.assertEqual(g, at.GitInfo("feat/x", True, 2, 1))
+
+    def test_parse_untracked_counts_as_dirty(self):
+        g = at.parse_status("# branch.oid abc1234567\n# branch.head main\n? new.txt\n")
+        self.assertTrue(g.dirty)
+
+    def test_parse_detached_shows_short_sha(self):
+        g = at.parse_status("# branch.oid abcdef1234\n# branch.head (detached)\n")
+        self.assertEqual(g.branch, "abcdef1")
+
+    def test_parse_initial_commit(self):
+        g = at.parse_status("# branch.oid (initial)\n# branch.head main\n")
+        self.assertEqual(g, at.GitInfo("main", False, 0, 0))
+
+    def test_short_branch_abbreviates_prefixes(self):
+        self.assertEqual(at.short_branch("main"), "main")
+        self.assertEqual(at.short_branch("feat/git"), "f/git")
+        self.assertEqual(at.short_branch("daan/fix/login"), "d/f/login")
+        self.assertEqual(at.short_branch("f/a-very-long-branch-name"), "f/a-very-long…")
+        self.assertEqual(at.cols(at.short_branch("x" * 40)), at.BRANCH_COLS)
+
+    def test_git_segments(self):
+        self.assertEqual(text(at.git_segments(at.GitInfo("main", False))), "main")
+        self.assertEqual(
+            text(at.git_segments(at.GitInfo("feat/x", True, 2, 1))), "f/x *↑2↓1"
+        )
+        # Status unknown (a slow repo): branch only.
+        self.assertEqual(text(at.git_segments(at.GitInfo("main", None))), "main")
+
+    def test_git_segments_branch_or_marks_alone(self):
+        dirty = at.GitInfo("feat/x", True, 2, 1)
+        self.assertEqual(text(at.git_segments(dirty, marks=False)), "f/x")
+        self.assertEqual(text(at.git_segments(dirty, branch=False)), "*↑2↓1")
+        # Marks alone on a clean checkout: nothing to show.
+        self.assertEqual(at.git_segments(at.GitInfo("main", False), branch=False), [])
+
+    def test_paint_right_aligns(self):
+        line = plain(
+            at.paint(
+                [("a long label here", None, False)],
+                20,
+                flex=0,
+                right=[("main*", None, False)],
+            )
+        )
+        self.assertEqual(at.cols(line), 20)
+        # Flush right, one pad column like the left edge; the label gives way.
+        self.assertTrue(line.endswith("main* "))
+        self.assertIn("…", line)
+        line = plain(at.paint([("ab", None, False)], 20, right=[("main", None, False)]))
+        self.assertEqual(line, " ab" + " " * 12 + "main ")
+
+    def test_paint_drops_right_when_it_cannot_fit(self):
+        line = plain(
+            at.paint(
+                [("label", None, False)],
+                8,
+                flex=0,
+                right=[("long-branch", None, False)],
+            )
+        )
+        self.assertNotIn("long", line)
+        self.assertEqual(at.cols(line), 8)
+
+
+def git_snap():
+    """w1 holds p1 (repo /r) and p3 (worktree /wt); w2 holds p2 outside any repo."""
+    s = snap()
+    s["agents"][1]["cwd"] = "/r"
+    # foreground_cwd follows a command in another repo; the row keeps cwd's.
+    s["agents"][1]["foreground_cwd"] = "/wt"
+    s["agents"][0]["cwd"] = "/tmp"
+    s["agents"].append(
+        {
+            "pane_id": "p3",
+            "tab_id": "t1",
+            "workspace_id": "w1",
+            "agent_status": "idle",
+            "cwd": "/wt/sub",
+        }
+    )
+    return s
+
+
+GIT = {
+    "/r": ("/r", at.GitInfo("main", True, 1, 0)),
+    "/wt/sub": ("/wt", at.GitInfo("feat/x", False)),
+    "/wt": ("/wt", at.GitInfo("feat/x", False)),
+    "/tmp": None,
+}
+
+
+class GitBuildTest(unittest.TestCase):
+    def test_no_git_means_no_right_column(self):
+        for r in at.build(git_snap(), set(), "t1", {}):
+            self.assertEqual(r[5], [])
+
+    def test_workspace_shows_a_repo_all_its_members_share(self):
+        s = git_snap()
+        s["agents"][2]["cwd"] = "/r"  # p3 joins p1 in /r
+        s["panes"].append(  # a shell outside any repo neither blocks nor counts
+            {"pane_id": "p5", "tab_id": "t1", "workspace_id": "w1", "cwd": "/tmp"}
+        )
+        rows = {r[0]: r for r in at.build(s, set(), "t1", {}, git=GIT)}
+        self.assertEqual(text(rows[("ws", "w1")][5]), "main *↑1")
+        for key in (("agent", "p1"), ("agent", "p3"), ("pane", "p5")):
+            self.assertEqual(rows[key][5], [])
+        # Outside any repo: nothing, on the workspace and its agent.
+        self.assertEqual(rows[("ws", "w2")][5], [])
+        self.assertEqual(rows[("agent", "p2")][5], [])
+        # Folded, the counts take the row instead.
+        rows = {r[0]: r for r in at.build(s, {"w1"}, "t1", {}, git=GIT)}
+        self.assertEqual(rows[("ws", "w1")][5], [])
+
+    def test_one_member_elsewhere_and_every_member_shows_its_own(self):
+        s = git_snap()
+        s["agents"].append(
+            {
+                "pane_id": "p4",
+                "tab_id": "t1",
+                "workspace_id": "w1",
+                "agent_status": "idle",
+                "cwd": "/r",
+            }
+        )
+        rows = {r[0]: r for r in at.build(s, set(), "t1", {}, git=GIT)}
+        # Two of three in /r is not all of them.
+        self.assertEqual(rows[("ws", "w1")][5], [])
+        self.assertEqual(text(rows[("agent", "p1")][5]), "main *↑1")
+        self.assertEqual(text(rows[("agent", "p4")][5]), "main *↑1")
+        self.assertEqual(text(rows[("agent", "p3")][5]), "f/x")
+
+    def test_without_a_majority_every_member_shows_its_own(self):
+        # Two agents in two repos: neither is the workspace's.
+        rows = {r[0]: r for r in at.build(git_snap(), set(), "t1", {}, git=GIT)}
+        self.assertEqual(rows[("ws", "w1")][5], [])
+        self.assertEqual(text(rows[("agent", "p1")][5]), "main *↑1")
+        self.assertEqual(text(rows[("agent", "p3")][5]), "f/x")
+
+    def test_marks_only_follow_the_same_rows(self):
+        s = git_snap()
+        s["agents"].append(
+            {
+                "pane_id": "p4",
+                "tab_id": "t1",
+                "workspace_id": "w1",
+                "agent_status": "idle",
+                "cwd": "/r",
+            }
+        )
+        rows = {r[0]: r for r in at.build(s, set(), "t1", {}, git=GIT, branch=False)}
+        self.assertEqual(rows[("ws", "w1")][5], [])
+        self.assertEqual(text(rows[("agent", "p1")][5]), "*↑1")
+        # p3's worktree is clean: no marks, so no column.
+        self.assertEqual(rows[("agent", "p3")][5], [])
+
+    def test_git_dirs(self):
+        self.assertEqual(at.git_dirs(git_snap()), {"/r", "/tmp", "/wt/sub"})
+
+
+@unittest.skipUnless(shutil.which("git"), "git not installed")
+class GitWatchTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.repo = os.path.realpath(self.tmp.name)
+        run = lambda *a: subprocess.run(
+            ["git", "-C", self.repo, *a], check=True, capture_output=True
+        )
+        run("init", "-q", "-b", "main")
+        os.makedirs(os.path.join(self.repo, "sub"))
+        self.watch = at.GitWatch(poll=0.1)
+
+    def tearDown(self):
+        self.watch.want(set())
+        self.tmp.cleanup()
+
+    def wait(self, check):
+        for _ in range(50):
+            if at.select.select([self.watch.fd], [], [], 0.1)[0]:
+                self.watch.drain()
+            if check(self.watch.info()):
+                return
+        self.fail(f"never saw it: {self.watch.info()}")
+
+    def test_reports_repo_and_follows_changes(self):
+        sub = os.path.join(self.repo, "sub")
+        self.watch.want({sub, "/"})
+        self.wait(
+            lambda i: (
+                i.get(sub) == (self.repo, at.GitInfo("main", False))
+                and "/" in i
+                and i["/"] is None
+            )
+        )
+        with open(os.path.join(self.repo, "new.txt"), "w") as f:
+            f.write("x")
+        self.wait(lambda i: i.get(sub) and i[sub][1].dirty)
+
+
+class RowActionTest(unittest.TestCase):
+    """Tree methods that read the selected row, on rows straight from build()."""
+
+    def test_methods_read_build_rows(self):
+        t = at.Tree()
+        t.rows = at.build(snap(), set(), "t1", {})
+        t.cursor = 0
+        self.assertEqual(t.edit_target(), ("ws", "w1"))
+        t.cursor = 1
+        self.assertEqual(t.edit_target(), ("tab", "t1"))
+        with mock.patch.object(at, "call") as call:
+            t.activate()
+            t.open_menu()
+        call.assert_called()
+        self.assertIsNotNone(t.menu)
+        with mock.patch.object(t, "move") as move:
+            t.left()
+        move.assert_called_with(0)
+
+
+class GitSlowTest(unittest.TestCase):
+    """A repo whose status times out shows its branch only, never stale marks."""
+
+    def fake(self, head=None):
+        def run_git(*args, cwd):
+            if args[0] == "rev-parse" and args[1] == "--show-toplevel":
+                return "/r\n"
+            if args[0] == "status":
+                raise subprocess.TimeoutExpired("git", 2)
+            if args[0] == "symbolic-ref" and head:
+                return head + "\n"
+            if args[0] == "rev-parse":
+                return "abc1234\n"
+            raise subprocess.CalledProcessError(1, "git")
+
+        return run_git
+
+    def scan(self, head):
+        w = at.GitWatch.__new__(at.GitWatch)
+        slow = {}
+        with mock.patch.object(at, "run_git", self.fake(head)):
+            return w._scan({"/r/sub"}, slow), slow
+
+    def test_timeout_gives_branch_only_and_backs_off(self):
+        info, slow = self.scan("feat/x")
+        self.assertEqual(info, {"/r/sub": ("/r", at.GitInfo("feat/x", None))})
+        self.assertGreater(slow[("root", "/r")], at.time.monotonic())
+
+    def test_branch_only_holds_for_a_dir_that_is_the_root(self):
+        # The status backoff for /r must not read as /r failing to find its repo.
+        w = at.GitWatch.__new__(at.GitWatch)
+        slow = {}
+        with mock.patch.object(at, "run_git", self.fake("main")):
+            w._scan({"/r"}, slow)
+            info = w._scan({"/r"}, slow)
+        self.assertEqual(info, {"/r": ("/r", at.GitInfo("main", None))})
+
+    def test_detached_falls_back_to_sha(self):
+        info, _ = self.scan(None)
+        self.assertEqual(info["/r/sub"][1].branch, "abc1234")
+
+    def test_slow_toplevel_is_not_retried(self):
+        w = at.GitWatch.__new__(at.GitWatch)
+        slow, calls = {}, []
+
+        def run_git(*args, cwd):
+            calls.append(args)
+            raise subprocess.TimeoutExpired("git", 2)
+
+        with mock.patch.object(at, "run_git", run_git):
+            self.assertEqual(w._scan({"/d"}, slow), {"/d": None})
+            w._scan({"/d"}, slow)
+        self.assertEqual(len(calls), 1)
 
 
 if __name__ == "__main__":
