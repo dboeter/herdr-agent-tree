@@ -45,11 +45,13 @@ jobs:
             REPO: ${{ github.repository }}
             PR NUMBER: ${{ github.event.pull_request.number }}
 
-            Review this pull request. The PR branch is already checked out
-            in the current working directory. Use `gh pr diff` to see the
-            change, and `gh pr view --json title,body,baseRefName,headRefName`
-            for the description. Always pass `--json`: plain `gh pr view`
-            needs permissions this job does not have.
+            Review this pull request. The working directory holds the PR
+            merged into its base (a detached HEAD, not the PR branch), so
+            gh cannot work out the PR by itself: always pass the number.
+            - Diff: `gh pr diff ${{ github.event.pull_request.number }}`
+            - Description: `gh pr view ${{ github.event.pull_request.number }} --json title,body,baseRefName,headRefName`
+              (always use --json; plain `gh pr view` needs permissions this
+              job does not have)
 
             Focus only on:
             1. Bugs and correctness: logic errors, unhandled edge cases,
@@ -71,7 +73,7 @@ jobs:
               `mcp__github_inline_comment__create_inline_comment`
               (with `confirmed: true`).
             - Then write ONE summary with
-              `gh pr comment --edit-last --create-if-none`, so the PR keeps
+              `gh pr comment ${{ github.event.pull_request.number }} --edit-last --create-if-none`, so the PR keeps
               a single summary that each review updates: a short list of
               open findings, or "No bugs or test gaps found."
             - Only post GitHub comments. Do not reply with review text
