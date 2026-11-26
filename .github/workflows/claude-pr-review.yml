@@ -6,10 +6,11 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
 
-# Cancel an older review run when new commits arrive on the same PR.
+# One review per PR at a time. A newer push waits for the running review to finish
+# instead of cancelling it halfway through posting comments.
 concurrency:
   group: claude-pr-review-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   review:
@@ -23,6 +24,9 @@ jobs:
       contents: read
       pull-requests: write
       id-token: write
+      # `gh pr view` reads check status; without these it fails.
+      checks: read
+      statuses: read
     steps:
       - uses: actions/checkout@v6
         with:
@@ -58,13 +62,20 @@ jobs:
             Only report problems you are confident about. For each one,
             say what goes wrong and in which situation.
 
+            Before posting, read the inline comments already on this PR:
+            `gh api repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/comments`
+            Do not post a problem again if an existing comment already
+            covers it.
+
             How to post:
-            - For each specific problem, add an inline comment with
+            - For each NEW problem, add an inline comment with
               `mcp__github_inline_comment__create_inline_comment`
               (with `confirmed: true`).
-            - Then post ONE top-level summary with `gh pr comment`:
-              a short list of findings, or "No bugs or test gaps found."
+            - Then write ONE summary with
+              `gh pr comment --edit-last --create-if-none`, so the PR keeps
+              a single summary that each review updates: a short list of
+              open findings, or "No bugs or test gaps found."
             - Only post GitHub comments. Do not reply with review text
               as a message.
           claude_args: |
-            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)"
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh api repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/comments)"
