@@ -68,6 +68,12 @@ jobs:
             Do not post a problem again if an existing comment already
             covers it.
 
+            Comment format (use it exactly, in every comment you post):
+            - First line of every comment:
+              `> 🤖 **Automated review** by Claude, run by the "Claude PR review" GitHub Action. Not written by a person.`
+            - Last line of the summary comment:
+              `<sub>Workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}</sub>`
+
             How to post:
             - For each NEW problem, add an inline comment with
               `mcp__github_inline_comment__create_inline_comment`
