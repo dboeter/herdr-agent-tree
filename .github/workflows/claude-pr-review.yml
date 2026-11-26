@@ -1,0 +1,88 @@
+name: Claude PR review
+
+# Reviews a pull request when it is opened, gets new commits,
+# or moves out of draft. Findings are posted as PR comments.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+# One review per PR at a time. A newer push waits for the running review to finish
+# instead of cancelling it halfway through posting comments.
+concurrency:
+  group: claude-pr-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  review:
+    # Skip drafts, and skip PRs from forks (they get no secrets).
+    if: >-
+      github.event.pull_request.draft == false &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      pull-requests: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          # Set ONE of these two repo secrets:
+          #   CLAUDE_CODE_OAUTH_TOKEN - from `claude setup-token` (uses your Claude subscription)
+          #   ANTHROPIC_API_KEY       - from console.anthropic.com (billed per use)
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Post comments as github-actions[bot], so the Claude GitHub App is not required.
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          # Also review PRs opened by these bots. Dependabot runs only get Dependabot secrets,
+          # so add the same token under Settings > Secrets > Dependabot too.
+          allowed_bots: "dependabot[bot]"
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number }}
+
+            Review this pull request. The working directory holds the PR
+            merged into its base (a detached HEAD, not the PR branch), so
+            gh cannot work out the PR by itself: always pass the number.
+            - Diff: `gh pr diff ${{ github.event.pull_request.number }}`
+            - Description: `gh pr view ${{ github.event.pull_request.number }} --json title,body,baseRefName,headRefName`
+              (always use --json; plain `gh pr view` needs permissions this
+              job does not have)
+
+            Focus only on:
+            1. Bugs and correctness: logic errors, unhandled edge cases,
+               wrong error handling, broken behaviour, race conditions.
+            2. Tests: changed behaviour without tests, tests that do not
+               actually check the change, missing edge-case tests.
+
+            Do not comment on style, naming or formatting.
+            Only report problems you are confident about. For each one,
+            say what goes wrong and in which situation.
+
+            Before posting, read the inline comments already on this PR:
+            `gh api --paginate repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/comments`
+            Do not post a problem again if an existing comment already
+            covers it.
+
+            Comment format (use it exactly, in every comment you post):
+            - First line of every comment:
+              `> 🤖 **Automated review** by Claude, run by the "Claude PR review" GitHub Action. Not written by a person.`
+            - Last line of the summary comment:
+              `<sub>Workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}</sub>`
+
+            How to post:
+            - For each NEW problem, add an inline comment with
+              `mcp__github_inline_comment__create_inline_comment`
+              (with `confirmed: true`).
+            - Then write ONE summary with
+              `gh pr comment ${{ github.event.pull_request.number }} --edit-last --create-if-none`, so the PR keeps
+              a single summary that each review updates: a short list of
+              open findings, or "No bugs or test gaps found."
+            - Only post GitHub comments. Do not reply with review text
+              as a message.
+          claude_args: |
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh api --paginate repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/comments)"
