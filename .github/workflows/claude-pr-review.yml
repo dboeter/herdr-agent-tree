@@ -37,6 +37,9 @@ jobs:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           # Post comments as github-actions[bot], so the Claude GitHub App is not required.
           github_token: ${{ secrets.GITHUB_TOKEN }}
+          # Also review PRs opened by these bots. Dependabot runs only get Dependabot secrets,
+          # so add the same token under Settings > Secrets > Dependabot too.
+          allowed_bots: "dependabot[bot]"
           prompt: |
             REPO: ${{ github.repository }}
             PR NUMBER: ${{ github.event.pull_request.number }}
